@@ -1,0 +1,14 @@
+{
+  "name": "Signal85",
+  "tree": {
+    "$className": "DataModel",
+    "ServerScriptService": {
+      "Signal85Server": { "$path": "src/server/Signal85Server.server.lua" }
+    },
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "Signal85Client": { "$path": "src/client/Signal85Client.client.lua" }
+      }
+    }
+  }
+}
