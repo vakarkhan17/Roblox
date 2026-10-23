@@ -1,6 +1,6 @@
 # 001 — Intro broadcast scene
 
-Status: TODO
+Status: DONE
 
 ## Goal
 When a player joins, show a short 80s-TV-style emergency broadcast from **WHCK 85.5 FM / Channel 8** that tells the story (see `docs/STORY.md`) before they start playing.
@@ -32,3 +32,10 @@ When a player joins, show a short 80s-TV-style emergency broadcast from **WHCK 8
 
 ## Out of scope
 Server changes, DataStore "seen intro" saving (later task).
+
+## Notes
+- New `src/client/IntroBroadcast.client.lua` (added to `default.project.json`). The whole overlay is a `CanvasGroup` in ScreenGui `Signal85Intro` (`DisplayOrder` 100, `ResetOnSpawn` false), so it fades out as one layer.
+- `Signal85Client` hides `Signal85HUD` and sinks F/Q/E while `LocalPlayer` has `IntroActive = true`. The intro also sets `IntroSeen` to guard against replays.
+- Skip binds Space/Enter/KeypadEnter/ButtonA at high priority and sinks them, so Space doesn't also jump. Playback runs in a `pcall` and always hands control back, even on an error.
+- Header, LIVE tag and SKIP use `Arcade`; the story lines use `Code` for readability. Added a small subtitle `85.5 FM SIMULCAST // HOLLOW CREEK` (station from `docs/STORY.md`).
+- Open: `SOUND_ID = 0` placeholder for a static sound; "seen intro" DataStore saving is a later task.

@@ -212,6 +212,13 @@ player:GetAttributeChangedSignal("Dimension"):Connect(function()
 	screenFlash(dim == "Undergrid" and RED or AMBER)
 end)
 player:GetAttributeChangedSignal("Carrying"):Connect(refreshCarry)
+
+-- hide the HUD while the intro broadcast is playing
+local function refreshIntro()
+	gui.Enabled = not player:GetAttribute("IntroActive")
+end
+player:GetAttributeChangedSignal("IntroActive"):Connect(refreshIntro)
+refreshIntro()
 ReplicatedStorage:GetAttributeChangedSignal("Progress"):Connect(refreshSeal)
 
 local function hookCharacter(char)
@@ -253,6 +260,9 @@ end
 local function onAction(actionName, inputState)
 	if inputState ~= Enum.UserInputState.Begin then
 		return Enum.ContextActionResult.Pass
+	end
+	if player:GetAttribute("IntroActive") then -- set by IntroBroadcast
+		return Enum.ContextActionResult.Sink
 	end
 	if actionName == "S85_Transform" then
 		TransformEvent:FireServer()
