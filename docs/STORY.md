@@ -27,8 +27,12 @@ Round loop: cross the rift → find shards → fight (robot) or flee (vehicle) �
 ## Why it never ends
 Each time the rift is sealed it reopens. Something deeper in the Undergrid is still transmitting.
 
+## Chapters
+1. **Seal the Rift** — collect Signal Shards in the Undergrid and feed them to the Signal Console. The rift closes... but the signal does not stop.
+2. **The Source** — sealing the rift only cut one line. The signal is now fed by **Hive Nodes**, pulsing growths rooted in the Undergrid. Destroying all three wakes their guardian, **the Mind Warden**, a giant Hollower that has been listening from beneath the Undergrid's radio tower. Defeat it and the signal finally goes quiet... for now.
+3. *(not written yet)*
+
 ## Future story hooks (not built yet)
-- **The Mind Warden** — a giant Hollower at the source of the signal (boss).
 - **Walkie-talkie kids** — town kids who radio in hints and story beats.
 - **LOWBAND files** — collectible lab documents revealing who built the Shiftframes and why.
 - **WHCK 85.5 FM** — the radio tower's station; used for broadcasts/intros.
