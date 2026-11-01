@@ -1,6 +1,6 @@
 # 003 — Save game and continue
 
-Status: TODO
+Status: DONE
 Depends on: 002 (uses `startChapter(n, stageState)`)
 
 ## Goal
@@ -64,3 +64,11 @@ The chapter state is shared by everyone on the server, so:
 
 ## Out of scope
 Multiple save slots, cloud sync of settings beyond brightness.
+
+## Notes
+- Server: `Signal85Save_v1` with retries/backoff, `UpdateAsync`, `bestChapter` never goes down. Saves only after the player picked CONTINUE / NEW GAME / a chapter, so the menu never overwrites an old save. Auto-save on every `setStage` (covers chapter starts), on leave and in `BindToClose`; manual save rate-limited to 15 s.
+- Remotes: `GetSave`, `ChooseStart`, `SaveGame` (RemoteFunctions), `Settings` (LIGHT level). Multiplayer rule as specced; CHAPTER SELECT (replay any reached chapter) only on a fresh world or when solo.
+- `src/client/StartMenu.client.lua`: title menu (CONTINUE always shown, greyed with the reason when there is no save: not published / API access off / no save yet), NEW GAME with confirm, CHAPTER SELECT, pause menu (MENU/M, SAVE/K), and a picture mission briefing per chapter (ViewportFrame models).
+- HOW TO PLAY no longer opens automatically; the briefing replaces it (still on H / ?).
+- Players already in the game when the server script finishes are now set up too (`onPlayerAdded` loop).
+- Open: IntroSeen is saved but the intro still plays every visit (SKIP is shown from the start, as specced).

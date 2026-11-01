@@ -1,6 +1,6 @@
 # 002 — Chapters + Chapter 2 "The Source"
 
-Status: TODO
+Status: DONE
 
 ## Goal
 Turn the single repeating round into a **chapter system**. Chapter 1 is the existing shard mission. When it is completed, the game moves on to **Chapter 2: The Source**, a new and harder challenge with a boss, instead of just reopening the same rift. Story is in `docs/STORY.md` (Chapters section).
@@ -52,3 +52,11 @@ Stage 2 — **The Mind Warden** (`Stage = "Boss"`, `Goal` = boss HP shown as a b
 
 ## Out of scope
 Saving (task 003), sound, Chapter 3.
+
+## Notes
+- Server: `CHAPTERS` table + documented `startChapter(n, stageState)`; shared state on `ReplicatedStorage` (`Chapter`, `ChapterTitle`, `Stage`, `Progress`/`Goal`, `BossHealth`/`BossMaxHealth`/`BossOpen`). A `chapterToken` stops old chapter loops when a new chapter starts.
+- Hive Nodes in folder `workspace.HiveNodes`, boss in `workspace.Boss` (model attribute `Boss`, part `WeakPoint`). Boss stage `Progress` = damage dealt, `Goal` = max HP.
+- Client: chapter title + per-stage objective, boss bar with "HEAD OPEN - SHOOT NOW!", red Undergrid preset during the boss, touch lock-on also targets nodes and the weak point.
+- Also added on request: Undergrid rift safe zone (`RIFT_SAFE_RADIUS`) and a ForceField arrival shield (`RIFT_SHIELD_TIME`); Pulse Cannon (45 dmg, 0.25 s, splash) with hold-to-fire on keyboard/mouse/touch; yellow target marker pointing to the next objective.
+- Testing knobs: `CONFIG.DEBUG_START_CHAPTER` (1 = normal) and `CONFIG.DEBUG_START_STAGE` (e.g. "Boss").
+- Open: Chapter 3 hook (`-- TODO: Chapter 3`); boss balance may need tuning after more playtests.
