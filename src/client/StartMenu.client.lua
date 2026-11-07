@@ -411,6 +411,10 @@ local inGame = false -- false: title menu after the intro, true: pause menu
 local showMain       -- forward declarations
 local showBriefing
 local showCharacter
+local showRewards    -- REWARDS hub, daily reward and the Meta remote helper (REWARDS section)
+local showDaily
+local meta
+local dailyChecked = false -- the daily reward popup shows once per session, after START MISSION
 
 local BRIEFINGS = {
 	[1] = {
@@ -709,18 +713,21 @@ showCharacter = function(onDone)
 		showToast("STILL LOADING - TRY AGAIN", RED)
 		return
 	end
-	local look = table.clone(summary.look or { own = false, outfit = 1, hair = 1, hairColor = 1, skin = 2 })
+	local look = table.clone(summary.look or { own = false, outfit = 1, hair = 1, hairColor = 1, skin = 2, paint = 1 })
 	if look.own then
-		look = { own = true, outfit = 1, hair = 1, hairColor = 1, skin = 2 }
+		look = { own = true, outfit = 1, hair = 1, hairColor = 1, skin = 2, paint = look.paint or 1 }
 	end
+	look.paint = look.paint or 1
 
+	-- returns false when the server refused it (a locked hair or paint)
 	local function send()
 		local ok, accepted = pcall(function()
-			return SetLook:InvokeServer(look.own and { own = true } or look)
+			return SetLook:InvokeServer(look.own and { own = true, paint = look.paint } or look)
 		end)
 		if ok and accepted then
-			summary.look = look.own and { own = true } or table.clone(look)
+			summary.look = look.own and { own = true, paint = look.paint } or table.clone(look)
 		end
+		return ok and accepted
 	end
 
 	local function render()
@@ -751,8 +758,13 @@ showCharacter = function(onDone)
 			local count = names and #names or #colors
 			local function step(delta)
 				look[key] = (look[key] - 1 + delta) % count + 1
-				look.own = false
-				send()
+				if key ~= "paint" then
+					look.own = false -- the suit paint also works with your own Roblox avatar
+				end
+				local name = names and names[look[key]]
+				if not send() and name and (name:find("%(LEVEL") or name:find("STREAK%)")) then
+					showToast("LOCKED: " .. name, RED)
+				end
 				render()
 			end
 			local prev = button(row, "<", AMBER, function()
@@ -762,7 +774,7 @@ showCharacter = function(onDone)
 			local value = text(row, {
 				Text = names and names[look[key]] or "■■■■", TextSize = 18, AutomaticSize = Enum.AutomaticSize.None,
 				Size = UDim2.new(0.34, 0, 1, 0), LayoutOrder = 3, TextColor3 = colors and colors[look[key]] or AMBER,
-				TextTransparency = look.own and 0.6 or 0,
+				TextTransparency = (look.own and key ~= "paint") and 0.6 or 0,
 			})
 			value.TextXAlignment = Enum.TextXAlignment.Center
 			local nextButton = button(row, ">", AMBER, function()
@@ -774,6 +786,9 @@ showCharacter = function(onDone)
 		chooser("HAIR", "hair", catalog.hairs, nil)
 		chooser("HAIR COLOR", "hairColor", nil, catalog.hairColors)
 		chooser("SKIN TONE", "skin", nil, catalog.skins)
+		if catalog.paints then
+			chooser("SUIT PAINT", "paint", catalog.paints, nil)
+		end
 
 		button(panel, look.own and "USING MY ROBLOX AVATAR" or "USE MY ROBLOX AVATAR", look.own and GREEN or DIM, function()
 			look.own = not look.own
@@ -907,7 +922,254 @@ showBriefing = function(chapter)
 	button(panel, inGame and "BACK TO THE GAME" or "START MISSION", GREEN, function()
 		inGame = true
 		setMenuOpen(false)
+		-- once per session: the daily reward pops up if today's box is ready
+		if not dailyChecked then
+			dailyChecked = true
+			task.spawn(function()
+				local status = meta("daily")
+				if status and status.ok and status.canClaim and not backdrop.Visible then
+					setMenuOpen(true)
+					showDaily(status, true)
+				end
+			end)
+		end
 	end, 6)
+	setFocus(1)
+end
+
+---------------------------------------------------------------------------
+-- REWARDS (task 010): daily reward, daily quests, achievements, top pilots, codes.
+-- The server decides everything; these screens only show what Meta returns.
+---------------------------------------------------------------------------
+local Meta = remotes:WaitForChild("Meta")
+local GOLD = Color3.fromRGB(255, 214, 90)
+local MINT = Color3.fromRGB(120, 255, 160)
+
+meta = function(action, arg)
+	local ok, result = pcall(function()
+		return Meta:InvokeServer(action, arg)
+	end)
+	if not ok or type(result) ~= "table" then
+		showToast("SOMETHING WENT WRONG - TRY AGAIN", RED)
+		return nil
+	end
+	if result.ok == false and result.message then
+		showToast(result.message, RED)
+	end
+	return result
+end
+
+local function countdown(seconds)
+	seconds = math.max(math.floor(seconds or 0), 0)
+	return string.format("%dh %02dm", seconds // 3600, (seconds % 3600) // 60)
+end
+
+local function scrollArea(order)
+	local area = make("ScrollingFrame", {
+		BackgroundTransparency = 1, BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, SMALL_SCREEN and 300 or 380), LayoutOrder = order,
+		CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollBarThickness = 8, ScrollBarImageColor3 = AMBER,
+		ScrollingDirection = Enum.ScrollingDirection.Y,
+	}, panel)
+	list(area, 6).VerticalAlignment = Enum.VerticalAlignment.Top
+	pad(area, 4)
+	return area
+end
+
+-- a row with a title, a line of text, an optional progress bar and a value on the right
+local function infoRow(parent, order, color, title, body, right, fill)
+	local row = make("Frame", {
+		BackgroundColor3 = Color3.fromRGB(22, 18, 28), BorderSizePixel = 0, Size = UDim2.new(1, -14, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = order,
+	}, parent)
+	make("UIStroke", { Color = color, Thickness = 2 }, row)
+	pad(row, 8)
+	local info = make("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, -150, 0, 0), AutomaticSize = Enum.AutomaticSize.Y }, row)
+	list(info, 3).HorizontalAlignment = Enum.HorizontalAlignment.Left
+	text(info, { Text = title, TextSize = 19, TextColor3 = color, TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = 1 })
+	if body then
+		text(info, { Text = body, Font = Enum.Font.Code, TextSize = 15, TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = 2 })
+	end
+	if fill then
+		local back = make("Frame", { BackgroundColor3 = Color3.fromRGB(40, 30, 40), BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 10), LayoutOrder = 3 }, info)
+		make("Frame", { BackgroundColor3 = color, BorderSizePixel = 0, Size = UDim2.fromScale(math.clamp(fill, 0, 1), 1) }, back)
+	end
+	if right then
+		text(row, {
+			Text = right, TextSize = 18, TextColor3 = color, TextXAlignment = Enum.TextXAlignment.Right, AutomaticSize = Enum.AutomaticSize.None,
+			AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, 0, 0.5, 0), Size = UDim2.fromOffset(140, 44),
+		})
+	end
+	return row
+end
+
+local function rewardsBack()
+	button(panel, "BACK", DIM, function()
+		showRewards()
+	end, 50)
+end
+
+-- DAILY REWARD: 7 boxes, today's glows; popup = shown by itself after START MISSION
+showDaily = function(status, popup)
+	status = status or meta("daily")
+	if not status or not status.ok then
+		return
+	end
+	clearScreen()
+	text(panel, { Text = "DAILY REWARD", TextSize = 34, TextColor3 = GOLD, LayoutOrder = 1 })
+	text(panel, { Text = "Claim once a day. Miss a day and the streak starts again at Day 1. Day 7 also unlocks the GOLD suit paint.",
+		Font = Enum.Font.Code, TextSize = 15, TextColor3 = DIM, LayoutOrder = 2 })
+	local row = make("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 92), LayoutOrder = 3 }, panel)
+	list(row, 6, true)
+	for day = 1, 7 do
+		local claimed = day < status.day or (day == status.day and not status.canClaim)
+		local today = day == status.day and status.canClaim
+		local color = claimed and GREEN or (today and GOLD or DIM)
+		local box = make("Frame", {
+			BackgroundColor3 = today and Color3.fromRGB(60, 48, 20) or Color3.fromRGB(22, 18, 28), BorderSizePixel = 0,
+			Size = UDim2.new(1 / 7, -6, 1, 0), LayoutOrder = day,
+		}, row)
+		make("UIStroke", { Color = color, Thickness = today and 3 or 2 }, box)
+		list(box, 2)
+		text(box, { Text = "DAY " .. day, TextSize = 14, TextColor3 = color, LayoutOrder = 1 })
+		text(box, { Text = claimed and "GOT" or tostring(status.rewards[day] or ""), TextSize = 22, TextColor3 = color, LayoutOrder = 2 })
+		text(box, { Text = day == 7 and "+GOLD" or "SCRAP", Font = Enum.Font.Code, TextSize = 12, TextColor3 = color, LayoutOrder = 3 })
+	end
+	if status.canClaim then
+		button(panel, "CLAIM DAY " .. status.day .. ": +" .. tostring(status.rewards[status.day] or 0) .. " SCRAP", GOLD, function()
+			local result = meta("claim")
+			if result and result.ok then
+				showToast("CLAIMED! COME BACK TOMORROW FOR DAY " .. (result.day % 7 + 1), GREEN)
+				showDaily(result, popup)
+			end
+		end, 4)
+	else
+		text(panel, { Text = "STREAK: " .. status.streak .. " DAY(S).  NEXT REWARD IN " .. countdown(status.secondsLeft), TextSize = 20, TextColor3 = CYAN, LayoutOrder = 4 })
+	end
+	if status.saving == false then
+		text(panel, { Text = "Saving is off here, so the streak is not kept when you leave.", Font = Enum.Font.Code, TextSize = 14, TextColor3 = RED, LayoutOrder = 5 })
+	end
+	if popup then
+		button(panel, "PLAY", GREEN, function()
+			setMenuOpen(false)
+		end, 6)
+	else
+		rewardsBack()
+	end
+	setFocus(1)
+end
+
+local function showQuests()
+	local data = meta("quests")
+	if not data or not data.ok then
+		return
+	end
+	clearScreen()
+	text(panel, { Text = "DAILY QUESTS", TextSize = 34, TextColor3 = MINT, LayoutOrder = 1 })
+	text(panel, { Text = "3 new quests every day (in " .. countdown(data.secondsLeft) .. "). Each one also gives +" .. tostring(data.xp) .. " XP.",
+		Font = Enum.Font.Code, TextSize = 15, TextColor3 = DIM, LayoutOrder = 2 })
+	for i, q in ipairs(data.quests) do
+		infoRow(panel, 2 + i, q.done and GREEN or AMBER, (q.done and "DONE: " or "") .. string.upper(q.text),
+			q.progress .. " / " .. q.goal, "+" .. q.reward .. " SCRAP", q.progress / math.max(q.goal, 1))
+	end
+	rewardsBack()
+	setFocus(1)
+end
+
+local function showAchievements()
+	local data = meta("achievements")
+	if not data or not data.ok then
+		return
+	end
+	clearScreen()
+	text(panel, { Text = "ACHIEVEMENTS  " .. data.unlocked .. " / " .. #data.achievements, TextSize = 30, TextColor3 = GOLD, LayoutOrder = 1 })
+	local area = scrollArea(2)
+	for i, a in ipairs(data.achievements) do
+		local body = a.hint .. ((not a.unlocked and a.progress and a.goal > 1) and ("   " .. a.progress .. " / " .. a.goal) or "")
+		infoRow(area, i, a.unlocked and GOLD or DIM, a.name, body, a.unlocked and "UNLOCKED" or ("+" .. a.reward .. " SCRAP"),
+			(not a.unlocked and a.progress and a.goal > 1) and (a.progress / a.goal) or nil)
+	end
+	rewardsBack()
+	setFocus(1)
+end
+
+local boardTab = "level"
+local function showBoard(data)
+	data = data or meta("board")
+	if not data or not data.ok then
+		return
+	end
+	clearScreen()
+	text(panel, { Text = "TOP PILOTS", TextSize = 34, TextColor3 = Color3.fromRGB(255, 80, 200), LayoutOrder = 1 })
+	local tabs = make("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 52), LayoutOrder = 2 }, panel)
+	list(tabs, 12, true)
+	for i, tab in ipairs({ { "level", "HIGHEST LEVEL" }, { "kills", "MOST DEFEATED" } }) do
+		local b = button(tabs, tab[2], boardTab == tab[1] and YELLOW or DIM, function()
+			boardTab = tab[1]
+			showBoard(data)
+		end, i)
+		b.Size = UDim2.fromOffset(230, 48)
+	end
+	local area = scrollArea(3)
+	local rows = data[boardTab] or {}
+	for i, row in ipairs(rows) do
+		local me = row.name == player.Name
+		infoRow(area, i, me and GOLD or (i <= 3 and YELLOW or AMBER), i .. ".  " .. row.name, nil,
+			(boardTab == "level" and "LV " or "") .. tostring(row.value))
+	end
+	if #rows == 0 then
+		text(area, { Text = "Nobody yet - play to get on the board!", Font = Enum.Font.Code, TextSize = 16, LayoutOrder = 1 })
+	end
+	text(panel, { Text = data.global and "ALL SERVERS - updates every 2 minutes" or "THIS SERVER ONLY (all servers once the game is published)",
+		Font = Enum.Font.Code, TextSize = 14, TextColor3 = DIM, LayoutOrder = 4 })
+	rewardsBack()
+	setFocus(1)
+end
+
+-- the REWARDS hub (title menu, and the REWARDS button while playing)
+showRewards = function()
+	clearScreen()
+	text(panel, { Text = "REWARDS", TextSize = 34, TextColor3 = GOLD, LayoutOrder = 1 })
+	text(panel, {
+		Text = "PILOT LEVEL " .. tostring(player:GetAttribute("Level") or 1) .. (player:GetAttribute("Title") and " - VETERAN" or "")
+			.. "    XP " .. tostring(player:GetAttribute("XP") or 0) .. " / " .. tostring(player:GetAttribute("XPNeed") or 100),
+		TextSize = 18, TextColor3 = MINT, LayoutOrder = 2,
+	})
+	if ReplicatedStorage:GetAttribute("Weekend2x") then
+		text(panel, { Text = "2x WEEKEND: double Scrap and XP until Sunday night (UTC)!", Font = Enum.Font.Code, TextSize = 16, TextColor3 = GOLD, LayoutOrder = 3 })
+	end
+	button(panel, "DAILY REWARD", GOLD, function()
+		showDaily(nil, false)
+	end, 4)
+	button(panel, "DAILY QUESTS", MINT, showQuests, 5)
+	button(panel, "ACHIEVEMENTS", GOLD, showAchievements, 6)
+	button(panel, "TOP PILOTS", Color3.fromRGB(255, 80, 200), function()
+		showBoard(nil)
+	end, 7)
+
+	local codeRow = make("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 52), LayoutOrder = 8 }, panel)
+	list(codeRow, 10, true)
+	local box = make("TextBox", {
+		PlaceholderText = "ENTER A CODE", Text = "", ClearTextOnFocus = false, Font = Enum.Font.Arcade, TextSize = 20,
+		TextColor3 = AMBER, PlaceholderColor3 = DIM, BackgroundColor3 = Color3.fromRGB(30, 24, 36), BorderSizePixel = 0,
+		Size = UDim2.fromOffset(260, 48), LayoutOrder = 1,
+	}, codeRow)
+	make("UIStroke", { Color = DIM, Thickness = 2, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, box)
+	local redeem = button(codeRow, "REDEEM", CYAN, function()
+		local result = meta("code", box.Text)
+		if result and result.ok then
+			showToast("CODE ACCEPTED: " .. result.message, GREEN)
+			box.Text = ""
+		end
+	end, 2)
+	redeem.Size = UDim2.fromOffset(160, 48)
+
+	button(panel, "BACK", DIM, function()
+		if inGame then
+			setMenuOpen(false)
+		else
+			showMain()
+		end
+	end, 9)
 	setFocus(1)
 end
 
@@ -973,13 +1235,16 @@ showMain = function()
 		if summary and summary.available and (summary.bestChapter or 1) > 1 then
 			button(panel, "CHAPTER SELECT", AMBER, showChapters, order + 2)
 		end
+		button(panel, "REWARDS + QUESTS", GOLD, function()
+			showRewards()
+		end, order + 3)
 		button(panel, "YOUR PILOT", Color3.fromRGB(255, 170, 200), function()
 			showCharacter(nil)
-		end, order + 3)
+		end, order + 4)
 		button(panel, "WATCH THE STORY", AMBER, function()
 			playStory(showMain)
-		end, order + 4)
-		button(panel, "SETTINGS", DIM, showSettings, order + 5)
+		end, order + 5)
+		button(panel, "SETTINGS", DIM, showSettings, order + 6)
 	end
 	setFocus((inGame or hasSave) and 1 or 2)
 end
@@ -1002,7 +1267,7 @@ end
 -- MENU / SAVE buttons while playing (keys M / K)
 ---------------------------------------------------------------------------
 local corner = make("Frame", {
-	AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -12, 0.42, 0), Size = UDim2.fromOffset(96, 104),
+	AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -12, 0.42, 0), Size = UDim2.fromOffset(96, 160),
 	BackgroundTransparency = 1, Visible = false,
 }, gui)
 list(corner, 8)
@@ -1022,6 +1287,12 @@ cornerButton(IS_PHONE and "SAVE" or "SAVE [K]", CYAN, function()
 		doSave()
 	end
 end, 2)
+cornerButton("REWARDS", GOLD, function()
+	if inGame and not backdrop.Visible and not player:GetAttribute("IntroActive") then
+		setMenuOpen(true)
+		showRewards()
+	end
+end, 3)
 
 ContextActionService:BindAction("S85_Menu", function(_, inputState)
 	if inputState == Enum.UserInputState.Begin then

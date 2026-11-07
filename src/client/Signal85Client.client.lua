@@ -253,6 +253,41 @@ local lightDown = button(panel, "-", { Position = UDim2.fromOffset(176, 178), Si
 local lightUp = button(panel, "+", { Position = UDim2.fromOffset(226, 178), Size = UDim2.fromOffset(40, 30) })
 local helpButton = button(panel, "?", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 8), Size = UDim2.fromOffset(32, 28) })
 
+-- pilot level: "LV 3" by the title and a thin XP bar along the bottom of the panel (attributes from the server)
+local levelLabel = label(panel, { Text = "LV 1", TextSize = 18, TextColor3 = Color3.fromRGB(120, 255, 160), TextXAlignment = Enum.TextXAlignment.Right,
+	Position = UDim2.fromOffset(150, 12), Size = UDim2.fromOffset(82, 22) })
+local xpBack = Instance.new("Frame")
+xpBack.Position = UDim2.new(0, 0, 1, -5)
+xpBack.Size = UDim2.new(1, 0, 0, 5)
+xpBack.BackgroundColor3 = Color3.fromRGB(30, 40, 34)
+xpBack.BorderSizePixel = 0
+xpBack.Parent = panel
+local xpFill = Instance.new("Frame")
+xpFill.Size = UDim2.fromScale(0, 1)
+xpFill.BackgroundColor3 = Color3.fromRGB(120, 255, 160)
+xpFill.BorderSizePixel = 0
+xpFill.Parent = xpBack
+local function updateLevel()
+	local level = player:GetAttribute("Level") or 1
+	local need = math.max(player:GetAttribute("XPNeed") or 100, 1)
+	levelLabel.Text = (player:GetAttribute("Title") and "VET " or "LV ") .. level
+	TweenService:Create(xpFill, TweenInfo.new(0.3), { Size = UDim2.fromScale(math.clamp((player:GetAttribute("XP") or 0) / need, 0, 1), 1) }):Play()
+end
+for _, name in ipairs({ "Level", "XP", "XPNeed", "Title" }) do
+	player:GetAttributeChangedSignal(name):Connect(updateLevel)
+end
+updateLevel()
+
+-- weekend 2x banner (top centre)
+local weekendLabel = label(gui, { Text = "2x WEEKEND: DOUBLE SCRAP + XP", TextSize = 18, TextColor3 = Color3.fromRGB(255, 214, 90),
+	TextXAlignment = Enum.TextXAlignment.Center, AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 12),
+	Size = UDim2.fromOffset(340, 22), Visible = false })
+local function updateWeekend()
+	weekendLabel.Visible = ReplicatedStorage:GetAttribute("Weekend2x") == true
+end
+ReplicatedStorage:GetAttributeChangedSignal("Weekend2x"):Connect(updateWeekend)
+updateWeekend()
+
 -- current objective, under the panel
 local objective = Instance.new("Frame")
 objective.Position = UDim2.fromOffset(16, 56 + math.floor(226 * HUD_SCALE))

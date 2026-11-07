@@ -100,6 +100,16 @@ local CONFIG = {
 	SCRAP_FILE = 15,
 	SCRAP_RELAY = 20,
 	SCRAP_HOUND = 3,
+
+	-- reasons to come back (task 010): daily reward, quests, levels, achievements, leaderboard, codes, weekend 2x
+	DEBUG_DAY_OFFSET = 0,        -- testing: pretend it is N days later (1 = tomorrow). Normal play: 0
+	DEBUG_FORCE_WEEKEND = false, -- testing: weekend 2x on. Normal play: false
+	DAILY_REWARDS = { 50, 75, 100, 150, 200, 300, 600 }, -- Scrap for day 1..7 of the streak (day 7 also unlocks GOLD paint)
+	QUEST_XP = 60,               -- XP for each finished daily quest
+	LEVEL_SCRAP = 40,            -- Scrap for reaching a level = this x the new level
+	MAX_LEVEL = 50,
+	LEADERBOARD_REFRESH = 120,   -- seconds
+	CODES = { SIGNAL85 = 250, HOLLOWCREEK = 150 }, -- code = Scrap; each works once per player. Add more here.
 }
 
 -- Weapons (robot mode). Bought with Scrap in the shop; one is equipped.
@@ -175,6 +185,11 @@ local CycleWeaponEvent = makeRemote("CycleWeapon")      -- client -> server: swa
 local ElevatorMenuEvent = makeRemote("ElevatorMenu")    -- server -> client: show the floor list (current floor, floors)
 local ElevatorGoEvent = makeRemote("ElevatorGo")        -- client -> server: the chosen floor
 local SetLookFunction = makeFunction("SetLook")         -- client -> server: pilot look table -> ok
+local MetaFunction = makeFunction("Meta")               -- client -> server: "daily" | "claim" | "quests" | "achievements" | "board" | "code", text
+
+-- defined in the "Reasons to come back" section (task 010), used all over the game
+local track     -- (player, kind, amount): lifetime counts, daily quests, achievements
+local trackDoor -- (player, door): a hotel room door was opened
 
 -- shared world state (see the Chapters section)
 ReplicatedStorage:SetAttribute("Chapter", 1)
@@ -1133,6 +1148,8 @@ for _, offset in ipairs({ Vector3.zero, CONFIG.UNDERGRID_OFFSET }) do
 	workspace.Terrain:FillBlock(CFrame.new(HOTEL_CENTER + offset + Vector3.new(0, 45.5, 0)), Vector3.new(HOTEL_HALF.X * 2 + 8, 90, HOTEL_HALF.Y * 2 + 8), Enum.Material.Air)
 end
 
+local setHotelTheme -- (chapter) used by startChapter; the rest of this section is inside a do-block (200-locals limit)
+do
 local hotelThemed = { HotelLight = {}, HotelRoomLamp = {}, HotelWindow = {}, HotelFlicker = {}, HotelEmergency = {}, HotelHive = {} }
 local hotelElevatorPrompts = {}
 local elevatorRequests = {} -- [player] = { side, world, at } while their floor list is open
@@ -1198,6 +1215,7 @@ ElevatorGoEvent.OnServerEvent:Connect(function(player, target)
 	local dest = elevatorCab(target, request.side, request.world) + Vector3.new(0, 3.5, 0)
 	char:PivotTo(CFrame.new(dest) * char:GetPivot().Rotation)
 	sparkBurst(dest, Color3.fromRGB(60, 255, 140), 12, 10, 0.3, 0.4)
+	track(player, "elevator", 1)
 	NotifyEvent:FireClient(player, target == 1 and "FLOOR 1 - LOBBY" or ("FLOOR " .. target), Color3.fromRGB(255, 214, 140))
 end)
 
@@ -1220,15 +1238,19 @@ for _, model in ipairs({ town:FindFirstChild("GrandHotel"), undergrid:FindFirstC
 		elseif d:IsA("ProximityPrompt") and d.Name == "HotelDoorPrompt" then
 			local door = d.Parent
 			door:SetAttribute("ClosedCFrame", door.CFrame)
-			d.Triggered:Connect(function()
+			d.Triggered:Connect(function(player)
+				local opening = not door:GetAttribute("Open") and not door:GetAttribute("Moving")
 				useDoor(door, d)
+				if opening then
+					trackDoor(player, door)
+				end
 			end)
 		end
 	end
 end
 
 -- Chapter 1: lights on. Chapter 2: Hive growth, elevators stuck. Chapter 3: power out, red emergency lights.
-local function setHotelTheme(chapter)
+setHotelTheme = function(chapter)
 	local powerOut = chapter == 3
 	local function lit(list, on)
 		for _, p in ipairs(list) do
@@ -1260,6 +1282,7 @@ local function setHotelTheme(chapter)
 		prompt.Enabled = chapter ~= 2 and chapter ~= 3
 	end
 end
+end -- hotel runtime section
 
 -- the client uses these for the FLOOR label, the flashlight and the mirror scare
 workspace:SetAttribute("HotelCenter", HOTEL_CENTER)
@@ -1391,10 +1414,41 @@ local STEEL = Color3.fromRGB(70, 92, 125)
 local ACCENT = Color3.fromRGB(255, 170, 40)
 local GLOW = Color3.fromRGB(80, 220, 255)
 
+-- suit paints (YOUR PILOT): unlocked by pilot level, or the 7-day daily streak (gold)
+local SUIT_PAINTS = {
+	{ name = "STANDARD", steel = STEEL, accent = ACCENT, glow = GLOW },
+	{ name = "CRIMSON", level = 5, steel = Color3.fromRGB(125, 32, 38), accent = Color3.fromRGB(225, 225, 232), glow = Color3.fromRGB(255, 96, 70) },
+	{ name = "NEON TRIM", level = 10, steel = Color3.fromRGB(30, 30, 42), accent = Color3.fromRGB(255, 60, 200), glow = Color3.fromRGB(255, 60, 200) },
+	{ name = "GOLD", daily = true, steel = Color3.fromRGB(205, 165, 60), accent = Color3.fromRGB(70, 46, 24), glow = Color3.fromRGB(255, 232, 150) },
+}
+local PAINT_ROLE = {
+	Helmet = "steel", Chassis = "steel", Cabin = "steel",
+	Fin = "accent", ShoulderPad = "accent", Stripe = "accent", Spoiler = "accent",
+	Visor = "glow", Core = "glow", Windshield = "glow",
+}
+
+-- recolour the robot armor and the car shell to the character's SuitPaint attribute
+local function repaintSuit(char)
+	local paint = SUIT_PAINTS[char:GetAttribute("SuitPaint") or 1] or SUIT_PAINTS[1]
+	for _, folderName in ipairs({ "ShiftframeArmor", "ShiftframeVehicle" }) do
+		local folder = char:FindFirstChild(folderName)
+		if folder then
+			for _, p in ipairs(folder:GetDescendants()) do
+				if p:IsA("BasePart") then
+					local role = PAINT_ROLE[p.Name] or (p.Name:sub(-5) == "Plate" and "steel")
+					if role then
+						p.Color = paint[role]
+					end
+				end
+			end
+		end
+	end
+end
+
 local state = {} -- [player] = { mode, lastTransform, lastBlast, lastShift }
 
 -- defined in the Saving section (profiles live there); used by kills and deliveries
-local awardScrap      -- (player, amount, reason)
+local awardScrap      -- (player, amount, reason, plain)
 local upgradeLevel    -- (player, id) -> 0..3
 local equippedWeapon  -- (player) -> WEAPONS entry
 
@@ -1479,8 +1533,9 @@ local HAIR_COLORS = {
 -- styles that use HAIR COLOR. To add a hair: put its Marketplace id in HAIR_IDS and its name here.
 local HAIR_STYLES = {
 	"PAL HAIR", "BROWN HAIR", "SHORT FRINGE BLACK", "SHORT FRINGE BLONDE", "TOP KNOT BROWN", "TOP KNOT BLONDE", "LONG RED HAIR",
-	"SPIKY (ANY COLOR)", "MOHAWK (ANY COLOR)", "CURLY (ANY COLOR)",
+	"SPIKY (ANY COLOR)", "MOHAWK (ANY COLOR)", "CURLY (ANY COLOR)", "PONYTAIL (ANY COLOR)",
 }
+local HAIR_LEVEL = { ["PONYTAIL (ANY COLOR)"] = 15 } -- hair styles unlocked by pilot level
 local HAIR_IDS = {
 	["PAL HAIR"] = 63690008,
 	["BROWN HAIR"] = 62234425,
@@ -1490,7 +1545,7 @@ local HAIR_IDS = {
 	["TOP KNOT BLONDE"] = 9244057408,
 	["LONG RED HAIR"] = 2956239660, -- "Belle Of Belfast Long Red Hair"
 }
-local HAIR_BLOCK = { ["SPIKY (ANY COLOR)"] = "SPIKY", ["MOHAWK (ANY COLOR)"] = "MOHAWK", ["CURLY (ANY COLOR)"] = "CURLY" }
+local HAIR_BLOCK = { ["SPIKY (ANY COLOR)"] = "SPIKY", ["MOHAWK (ANY COLOR)"] = "MOHAWK", ["CURLY (ANY COLOR)"] = "CURLY", ["PONYTAIL (ANY COLOR)"] = "PONYTAIL" }
 
 -- torso / arms / legs colours (arms = nil: short sleeves, skin colour), plus extra parts
 local PILOT_OUTFITS = {
@@ -1512,11 +1567,11 @@ local function validLook(look)
 	if typeof(look) ~= "table" then
 		return nil
 	end
-	if look.own == true then
-		return { own = true }
-	end
 	local function pick(v, n)
 		return (typeof(v) == "number" and v % 1 == 0 and v >= 1 and v <= n) and v or 1
+	end
+	if look.own == true then
+		return { own = true, paint = pick(look.paint, #SUIT_PAINTS) }
 	end
 	return {
 		own = false,
@@ -1524,9 +1579,12 @@ local function validLook(look)
 		hair = pick(look.hair, #HAIR_STYLES),
 		hairColor = pick(look.hairColor, #HAIR_COLORS),
 		skin = pick(look.skin, #SKIN_TONES),
+		paint = pick(look.paint, #SUIT_PAINTS),
 	}
 end
 
+local applyPilotLook -- (player, char, look); its helpers below are inside a do-block (200-locals limit)
+do
 local function bodyPart(char, r15, r6)
 	return char:FindFirstChild(r15) or (r6 and char:FindFirstChild(r6))
 end
@@ -1632,7 +1690,7 @@ local function buildOutfitDetails(folder, char, outfit, skin)
 end
 
 -- apply a pilot look to a character (yields: ApplyDescription)
-local function applyPilotLook(player, char, look)
+applyPilotLook = function(player, char, look)
 	local old = char:FindFirstChild("PilotLook")
 	if old then
 		old:Destroy()
@@ -1720,6 +1778,7 @@ local function applyPilotLook(player, char, look)
 		end
 	end
 end
+end -- pilot look helpers
 
 -- which layers show: the pilot's look (hair, details) in PILOT mode, the armor in ROBOT mode
 local function setLayerVisible(char, folderName, visible)
@@ -1776,6 +1835,7 @@ local function buildVehicle(char)
 		CFrame.new(0, base + 3.5, -1.55) * CFrame.Angles(math.rad(-20), 0, 0))
 	add({ Name = "Stripe", Size = Vector3.new(1.2, 0.1, 11.05), Color = ACCENT, Material = Enum.Material.SmoothPlastic }, CFrame.new(0, base + 2.72, 0))
 	add({ Name = "Spoiler", Size = Vector3.new(6, 0.25, 1.2), Color = ACCENT, Material = Enum.Material.Metal }, CFrame.new(0, base + 3.4, 5.3))
+	task.defer(repaintSuit, char) -- suit paint (after the whole shell is built)
 
 	for _, x in ipairs({ -3.25, 3.25 }) do
 		for _, z in ipairs({ -3.6, 3.6 }) do
@@ -2037,6 +2097,13 @@ local function damageCreature(m, amount, attacker)
 		killCreature(m)
 		if attacker then
 			awardScrap(attacker, data.reward, m.Name == "StaticHound" and "STATIC HOUND" or "HOLLOWER")
+			track(attacker, "kill", 1)
+			if m.Name == "StaticHound" then
+				track(attacker, "hound", 1)
+			end
+			if equippedWeapon(attacker).melee then
+				track(attacker, "baton", 1)
+			end
 		end
 	end
 end
@@ -2218,16 +2285,56 @@ equippedWeapon = function(player)
 	return WEAPONS[profile and profile.weapon or "pulse"] or WEAPONS.pulse
 end
 
--- leaderstats + attributes the client reads (hold-to-fire rate, weapon name), and armor
+local updateBoards -- (player) leaderboard scores, defined in the task 010 section
+local addXp        -- (player, amount) defined in the task 010 section
+
+-- pilot level from total XP: level 1 needs 100 XP, each next level 60 more
+local function levelInfo(xp)
+	local level, need = 1, 100
+	while xp >= need and level < CONFIG.MAX_LEVEL do
+		xp = xp - need
+		level = level + 1
+		need = 100 + 60 * (level - 1)
+	end
+	return level, xp, need
+end
+
+-- the "game clock" for daily resets (CONFIG.DEBUG_DAY_OFFSET moves it for testing)
+local function gameTime()
+	return os.time() + CONFIG.DEBUG_DAY_OFFSET * 86400
+end
+
+local function dayNumber()
+	return math.floor(gameTime() / 86400) -- changes at midnight UTC
+end
+
+-- Friday, Saturday and Sunday (UTC): gameplay Scrap and XP x2
+local function isWeekend()
+	if CONFIG.DEBUG_FORCE_WEEKEND then
+		return true
+	end
+	local wday = os.date("!*t", gameTime()).wday -- 1 = Sunday ... 7 = Saturday
+	return wday == 1 or wday == 6 or wday == 7
+end
+
+-- leaderstats + attributes the client reads (hold-to-fire rate, weapon name, level), and armor
 local function applyLoadout(player)
 	local profile = profiles[player]
 	if not profile then
 		return
 	end
+	local level, into, need = levelInfo(profile.xp)
 	local stats = player:FindFirstChild("leaderstats")
 	if stats and stats:FindFirstChild("Scrap") then
 		stats.Scrap.Value = profile.scrap
 	end
+	if stats and stats:FindFirstChild("Level") then
+		stats.Level.Value = level
+	end
+	player:SetAttribute("Level", level)
+	player:SetAttribute("XP", into)
+	player:SetAttribute("XPNeed", need)
+	player:SetAttribute("Title", level >= 20 and "VETERAN" or nil)
 	local weapon = equippedWeapon(player)
 	player:SetAttribute("Weapon", profile.weapon)
 	player:SetAttribute("WeaponName", weapon.name)
@@ -2244,10 +2351,19 @@ local function applyLoadout(player)
 	end
 end
 
-awardScrap = function(player, amount, reason)
+-- plain = true: a reward from the daily / quests / achievements / codes (no 2x, no XP).
+-- Otherwise it's gameplay: doubled on weekends, and it gives the same amount of XP.
+awardScrap = function(player, amount, reason, plain)
 	local profile = profiles[player]
 	if not profile or amount <= 0 then
 		return
+	end
+	if not plain then
+		if isWeekend() then
+			amount = amount * 2
+			reason = reason .. " 2x"
+		end
+		addXp(player, amount)
 	end
 	profile.scrap = profile.scrap + amount
 	applyLoadout(player)
@@ -2273,15 +2389,43 @@ local function refreshLook(player)
 	end
 	applyPilotLook(player, char, profile.look)
 	setLayerVisible(char, "PilotLook", s.mode == "Pilot")
+	char:SetAttribute("SuitPaint", profile.look and profile.look.paint or 1)
+	repaintSuit(char)
 end
 
 -- the options the character select screen offers (names and colours; the server owns them)
-local function lookCatalog()
+-- level / daily-streak unlocks for the look (task 010)
+local function paintUnlocked(profile, i)
+	local paint = SUIT_PAINTS[i]
+	if not paint then
+		return false
+	end
+	if paint.daily then
+		return profile.gold == true
+	end
+	return levelInfo(profile.xp) >= (paint.level or 0)
+end
+
+local function hairUnlocked(profile, i)
+	local need = HAIR_LEVEL[HAIR_STYLES[i] or ""]
+	return not need or levelInfo(profile.xp) >= need
+end
+
+local function lookCatalog(profile)
 	local outfits = {}
 	for _, o in ipairs(PILOT_OUTFITS) do
 		table.insert(outfits, o.name)
 	end
-	return { outfits = outfits, hairs = HAIR_STYLES, hairColors = HAIR_COLORS, skins = SKIN_TONES }
+	local hairs, paints = {}, {}
+	for i, name in ipairs(HAIR_STYLES) do
+		local need = HAIR_LEVEL[name]
+		hairs[i] = (need and not (profile and hairUnlocked(profile, i))) and (name:gsub(" %(ANY COLOR%)", "") .. " (LEVEL " .. need .. ")") or name
+	end
+	for i, paint in ipairs(SUIT_PAINTS) do
+		local open = (not paint.level and not paint.daily) or (profile and paintUnlocked(profile, i))
+		paints[i] = open and paint.name or (paint.name .. (paint.daily and " (7-DAY STREAK)" or (" (LEVEL " .. paint.level .. ")")))
+	end
+	return { outfits = outfits, hairs = hairs, hairColors = HAIR_COLORS, skins = SKIN_TONES, paints = paints }
 end
 
 local function loadProfile(player)
@@ -2291,6 +2435,9 @@ local function loadProfile(player)
 		reason = saveStore == nil and "NOT PUBLISHED" or nil, -- why saving is unavailable, shown in the menu
 		-- shop
 		scrap = 0, owned = { pulse = true, baton = true }, weapon = "pulse", upgrades = { armor = 0, turbo = 0, shield = 0 },
+		-- task 010: XP, daily streak, quests, achievements, lifetime counts, used codes, paint unlocks
+		xp = 0, streak = 0, lastClaimDay = nil, quests = nil, achievements = {}, counts = {}, codes = {}, gold = false,
+		doorFloors = {}, -- this session only: doors opened per hotel floor (ROOM SERVICE)
 	}
 	profiles[player] = profile
 	applyLoadout(player)
@@ -2336,6 +2483,31 @@ local function loadProfile(player)
 			if type(data.upgrades) == "table" then
 				for _, id in ipairs(UPGRADE_ORDER) do
 					profile.upgrades[id] = math.clamp(math.floor(tonumber(data.upgrades[id]) or 0), 0, #UPGRADES[id].prices)
+				end
+			end
+
+			-- task 010 fields (missing in older saves); XP and counts earned while loading are kept
+			profile.xp = profile.xp + math.max(math.floor(tonumber(data.xp) or 0), 0)
+			profile.streak = math.max(math.floor(tonumber(data.streak) or 0), 0)
+			profile.lastClaimDay = tonumber(data.lastClaimDay)
+			profile.gold = data.gold == true
+			if type(data.quests) == "table" and tonumber(data.quests.day) and type(data.quests.list) == "table" then
+				profile.quests = data.quests
+			end
+			for _, key in ipairs({ "achievements", "codes" }) do
+				if type(data[key]) == "table" then
+					for _, id in ipairs(data[key]) do
+						if type(id) == "string" then
+							profile[key][id] = true
+						end
+					end
+				end
+			end
+			if type(data.counts) == "table" then
+				for kind, n in pairs(data.counts) do
+					if type(kind) == "string" and tonumber(n) then
+						profile.counts[kind] = (profile.counts[kind] or 0) + math.max(math.floor(n), 0)
+					end
 				end
 			end
 		end
@@ -2393,10 +2565,24 @@ local function writeSave(player)
 		owned = {},
 		weapon = profile.weapon,
 		upgrades = table.clone(profile.upgrades),
+		xp = profile.xp,
+		streak = profile.streak,
+		lastClaimDay = profile.lastClaimDay,
+		gold = profile.gold,
+		quests = profile.quests,
+		counts = table.clone(profile.counts),
+		achievements = {},
+		codes = {},
 	}
 	for id in pairs(profile.owned) do
 		table.insert(data.owned, id)
 	end
+	for _, key in ipairs({ "achievements", "codes" }) do
+		for id in pairs(profile[key]) do
+			table.insert(data[key], id)
+		end
+	end
+	updateBoards(player) -- leaderboard (OrderedDataStores), defined in the task 010 section
 	profile.lastWrite = os.clock()
 	local ok = withRetries(function()
 		return saveStore:UpdateAsync(saveKey(player), function(old)
@@ -2432,6 +2618,425 @@ local function checkpoint()
 		queueSave(plr)
 	end
 end
+
+---------------------------------------------------------------------------
+-- Reasons to come back (task 010): pilot level, daily reward, daily quests,
+-- achievements, leaderboard, codes and weekend 2x. The server decides all of
+-- it; the menu (StartMenu) asks through MetaFunction and only shows the result.
+-- (inside a do-block: the script is close to Luau's 200-locals limit)
+---------------------------------------------------------------------------
+local chapterCleared -- (chapter) a chapter was finished: counts for everyone playing
+do
+local LEVEL_UNLOCKS = { [5] = "CRIMSON SUIT PAINT", [10] = "NEON TRIM SUIT PAINT", [15] = "PONYTAIL HAIR", [20] = "VETERAN TITLE" }
+
+local QUESTS = {
+	{ id = "kills", kind = "kill", goal = 15, reward = 120, text = "Defeat 15 creatures" },
+	{ id = "kills40", kind = "kill", goal = 40, reward = 260, text = "Defeat 40 creatures" },
+	{ id = "baton", kind = "baton", goal = 5, reward = 130, text = "Defeat 5 creatures with the Shock Baton" },
+	{ id = "objective", kind = "objective", goal = 3, reward = 120, text = "Complete 3 mission goals (shards, nodes, files, relays)" },
+	{ id = "doors", kind = "door", goal = 5, reward = 80, text = "Open 5 hotel room doors" },
+	{ id = "elevator", kind = "elevator", goal = 2, reward = 80, text = "Ride the hotel elevator 2 times" },
+	{ id = "shifts", kind = "shift", goal = 4, reward = 90, text = "Shift through the rift 4 times" },
+	{ id = "transform", kind = "transform", goal = 10, reward = 70, text = "Transform 10 times" },
+	{ id = "chapter", kind = "chapter", goal = 1, reward = 250, text = "Finish a chapter" },
+}
+local QUEST_BY_ID = {}
+for _, q in ipairs(QUESTS) do
+	QUEST_BY_ID[q.id] = q
+end
+
+-- count = a lifetime counter that must reach goal; or check(profile) for anything else
+local ACHIEVEMENTS = {
+	{ id = "first", name = "FIRST CONTACT", hint = "Defeat your first creature", count = "kill", goal = 1, reward = 50 },
+	{ id = "hunter", name = "HOLLOW HUNTER", hint = "Defeat 100 creatures", count = "kill", goal = 100, reward = 300 },
+	{ id = "pack", name = "PACK BREAKER", hint = "Defeat 25 Static Hounds", count = "hound", goal = 25, reward = 250 },
+	{ id = "spark", name = "SPARK STICK", hint = "Defeat 25 creatures with the Shock Baton", count = "baton", goal = 25, reward = 200 },
+	{ id = "walker", name = "RIFT WALKER", hint = "Shift through the rift 50 times", count = "shift", goal = 50, reward = 200 },
+	{ id = "keeper", name = "SIGNAL KEEPER", hint = "Deliver 25 Signal Shards", count = "shard", goal = 25, reward = 200 },
+	{ id = "goingup", name = "GOING UP", hint = "Ride a hotel elevator", count = "elevator", goal = 1, reward = 50 },
+	{ id = "roomservice", name = "ROOM SERVICE", hint = "Open every room door on one hotel floor", count = "fullfloor", goal = 1, reward = 150 },
+	{ id = "sealed", name = "SEALED", hint = "Finish Chapter 1", count = "chapter1", goal = 1, reward = 100 },
+	{ id = "warden", name = "WARDEN BREAKER", hint = "Defeat the Mind Warden", count = "chapter2", goal = 1, reward = 250 },
+	{ id = "nightshift", name = "NIGHT SHIFT", hint = "Finish Chapter 3", count = "chapter3", goal = 1, reward = 300 },
+	{ id = "untouched", name = "UNTOUCHED", hint = "Finish a chapter without dying", count = "untouched", goal = 1, reward = 300 },
+	{ id = "loaded", name = "FULLY LOADED", hint = "Own every weapon", reward = 300, check = function(profile)
+		for _, id in ipairs(WEAPON_ORDER) do
+			if not profile.owned[id] then
+				return false
+			end
+		end
+		return true
+	end },
+	{ id = "roll", name = "ON A ROLL", hint = "Claim the daily reward 7 days in a row", reward = 200, check = function(profile)
+		return profile.streak >= 7
+	end },
+	{ id = "rising", name = "RISING PILOT", hint = "Reach level 10", reward = 200, check = function(profile)
+		return levelInfo(profile.xp) >= 10
+	end },
+	{ id = "veteran", name = "VETERAN", hint = "Reach level 20", reward = 500, check = function(profile)
+		return levelInfo(profile.xp) >= 20
+	end },
+}
+
+local function secondsToReset()
+	return 86400 - gameTime() % 86400
+end
+
+local function checkAchievements(player)
+	local profile = profiles[player]
+	if not profile or not profile.loaded then
+		return
+	end
+	for _, a in ipairs(ACHIEVEMENTS) do
+		if not profile.achievements[a.id] then
+			local met
+			if a.check then
+				met = a.check(profile)
+			else
+				met = (profile.counts[a.count] or 0) >= a.goal
+			end
+			if met then
+				profile.achievements[a.id] = true
+				NotifyEvent:FireClient(player, "ACHIEVEMENT: " .. a.name, Color3.fromRGB(255, 214, 90))
+				awardScrap(player, a.reward, a.name, true)
+				queueSave(player)
+			end
+		end
+	end
+end
+
+addXp = function(player, amount)
+	local profile = profiles[player]
+	if not profile or amount <= 0 then
+		return
+	end
+	local before = levelInfo(profile.xp)
+	profile.xp = profile.xp + amount
+	local after = levelInfo(profile.xp)
+	applyLoadout(player)
+	for level = before + 1, after do
+		local unlock = LEVEL_UNLOCKS[level]
+		NotifyEvent:FireClient(player, "LEVEL " .. level .. "!" .. (unlock and ("  UNLOCKED: " .. unlock) or ""), Color3.fromRGB(120, 255, 160))
+		awardScrap(player, CONFIG.LEVEL_SCRAP * level, "LEVEL " .. level, true)
+	end
+	if after > before then
+		checkAchievements(player) -- RISING PILOT / VETERAN
+	end
+end
+
+-- today's 3 quests: the same for everyone (picked from the day number), never two of one kind
+local function todaysQuests(profile)
+	local day = dayNumber()
+	if not profile.quests or profile.quests.day ~= day then
+		local pick = Random.new(day)
+		local pool = table.clone(QUESTS)
+		local list = {}
+		while #list < 3 and #pool > 0 do
+			local q = table.remove(pool, pick:NextInteger(1, #pool))
+			table.insert(list, { id = q.id, progress = 0, done = false })
+			for i = #pool, 1, -1 do
+				if pool[i].kind == q.kind then
+					table.remove(pool, i)
+				end
+			end
+		end
+		profile.quests = { day = day, list = list }
+	end
+	return profile.quests
+end
+
+-- something happened: lifetime counts, quest progress, achievements
+track = function(player, kind, amount)
+	local profile = profiles[player]
+	if not profile or not profile.loaded then
+		return
+	end
+	amount = amount or 1
+	profile.counts[kind] = (profile.counts[kind] or 0) + amount
+	for _, q in ipairs(todaysQuests(profile).list) do
+		local def = QUEST_BY_ID[q.id]
+		if def and def.kind == kind and not q.done then
+			q.progress = math.min(q.progress + amount, def.goal)
+			if q.progress >= def.goal then
+				q.done = true
+				NotifyEvent:FireClient(player, "QUEST DONE: " .. string.upper(def.text), Color3.fromRGB(120, 255, 160))
+				awardScrap(player, def.reward, "QUEST", true)
+				addXp(player, CONFIG.QUEST_XP)
+				queueSave(player)
+			end
+		end
+	end
+	checkAchievements(player)
+end
+
+-- a chapter was finished: counts for everyone playing (and UNTOUCHED if they never died in it)
+chapterCleared = function(chapter)
+	for _, plr in ipairs(Players:GetPlayers()) do
+		local profile = profiles[plr]
+		if profile and profile.chosen then
+			track(plr, "chapter" .. chapter, 1)
+			if not profile.diedThisChapter then
+				track(plr, "untouched", 1)
+			end
+			track(plr, "chapter", 1)
+		end
+	end
+end
+
+-- a hotel room door was opened (ROOM SERVICE: all 12 rooms of one floor, this session)
+trackDoor = function(player, door)
+	local profile = profiles[player]
+	if not profile then
+		return
+	end
+	track(player, "door", 1)
+	local floor = math.floor((door.Position.Y - HOTEL_CENTER.Y) / HOTEL_FLOOR_H) + 1
+	local seen = profile.doorFloors[floor]
+	if not seen then
+		seen = { n = 0 }
+		profile.doorFloors[floor] = seen
+	end
+	local key = door:GetFullName()
+	if not seen[key] then
+		seen[key] = true
+		seen.n = seen.n + 1
+		if seen.n == #HOTEL_ROOMS then
+			track(player, "fullfloor", 1)
+		end
+	end
+end
+
+-- daily reward: which box is today's, whether it can be claimed
+local function dailyStatus(profile)
+	local today = dayNumber()
+	local claimedToday = profile.lastClaimDay == today
+	local alive = claimedToday or profile.lastClaimDay == today - 1
+	local streak = alive and profile.streak or 0
+	return {
+		ok = true,
+		canClaim = not claimedToday,
+		day = claimedToday and ((streak - 1) % 7 + 1) or (streak % 7 + 1),
+		streak = streak,
+		rewards = CONFIG.DAILY_REWARDS,
+		secondsLeft = secondsToReset(),
+		saving = profile.available,
+	}
+end
+
+-- leaderboard: OrderedDataStores (all servers); this server's players when they're unavailable
+local boardStores = {}
+pcall(function()
+	boardStores.level = DataStoreService:GetOrderedDataStore("Signal85Top_Level_v1")
+	boardStores.kills = DataStoreService:GetOrderedDataStore("Signal85Top_Kills_v1")
+end)
+local boardCache = { level = {}, kills = {}, global = false }
+local nameCache = {}
+
+updateBoards = function(player)
+	local profile = profiles[player]
+	if not profile or not profile.available or not boardStores.level then
+		return
+	end
+	local key = tostring(player.UserId)
+	local level, kills = levelInfo(profile.xp), profile.counts.kill or 0
+	task.spawn(function()
+		pcall(function()
+			boardStores.level:SetAsync(key, level)
+		end)
+		pcall(function()
+			boardStores.kills:SetAsync(key, kills)
+		end)
+	end)
+end
+
+local function nameOf(userId)
+	if not userId then
+		return "?"
+	end
+	if not nameCache[userId] then
+		local ok, name = pcall(function()
+			return Players:GetNameFromUserIdAsync(userId)
+		end)
+		nameCache[userId] = ok and name or ("Pilot " .. userId)
+	end
+	return nameCache[userId]
+end
+
+local function localBoard(kind)
+	local rows = {}
+	for plr, profile in pairs(profiles) do
+		if plr.Parent then
+			table.insert(rows, { name = plr.Name, value = kind == "level" and levelInfo(profile.xp) or (profile.counts.kill or 0) })
+		end
+	end
+	table.sort(rows, function(a, b)
+		return a.value > b.value
+	end)
+	while #rows > 10 do
+		table.remove(rows)
+	end
+	return rows
+end
+
+-- the TOP PILOTS board in town, by the Scrap Garage, facing the spawn
+local boardText = {}
+do
+	local m = Instance.new("Model")
+	m.Name = "TopPilotsBoard"
+	local face = CFrame.lookAt(Vector3.new(-8, 8, 220), Vector3.new(0, 8, 200))
+	local board = newPart({ Name = "Board", Size = Vector3.new(16, 10, 0.6), CFrame = face, Color = Color3.fromRGB(20, 18, 26),
+		Material = Enum.Material.SmoothPlastic, Parent = m })
+	newPart({ Name = "BoardTrim", Size = Vector3.new(16.6, 0.5, 0.8), CFrame = face * CFrame.new(0, 5.2, 0), Color = Color3.fromRGB(255, 80, 200),
+		Material = Enum.Material.Neon, Parent = m })
+	for _, side in ipairs({ -1, 1 }) do
+		newPart({ Name = "BoardPost", Size = Vector3.new(0.6, 13, 0.6), CFrame = face * CFrame.new(side * 7.5, -1.5, 0.6),
+			Color = Color3.fromRGB(60, 60, 70), Material = Enum.Material.Metal, Parent = m })
+	end
+	local gui = Instance.new("SurfaceGui")
+	gui.Face = Enum.NormalId.Front
+	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	gui.PixelsPerStud = 50
+	gui.LightInfluence = 0
+	gui.Parent = board
+	local function label(props)
+		local l = Instance.new("TextLabel")
+		l.BackgroundTransparency = 1
+		l.Font = Enum.Font.Code
+		l.TextColor3 = Color3.fromRGB(230, 230, 240)
+		l.TextXAlignment = Enum.TextXAlignment.Left
+		l.TextYAlignment = Enum.TextYAlignment.Top
+		for k, v in pairs(props) do
+			l[k] = v
+		end
+		l.Parent = gui
+		return l
+	end
+	label({ Text = "TOP PILOTS", Font = Enum.Font.Arcade, TextSize = 48, TextColor3 = Color3.fromRGB(255, 80, 200),
+		TextXAlignment = Enum.TextXAlignment.Center, Position = UDim2.fromOffset(0, 10), Size = UDim2.new(1, 0, 0, 56) })
+	boardText.level = label({ TextSize = 24, Position = UDim2.fromOffset(30, 80), Size = UDim2.fromOffset(360, 360) })
+	boardText.kills = label({ TextSize = 24, Position = UDim2.fromOffset(420, 80), Size = UDim2.fromOffset(360, 360) })
+	boardText.footer = label({ TextSize = 18, TextColor3 = Color3.fromRGB(150, 150, 165), TextXAlignment = Enum.TextXAlignment.Center,
+		Position = UDim2.fromOffset(0, 455), Size = UDim2.new(1, 0, 0, 30) })
+	m.Parent = workspace
+end
+
+local function drawBoard()
+	for _, kind in ipairs({ "level", "kills" }) do
+		local lines = { kind == "level" and "HIGHEST LEVEL" or "MOST DEFEATED", "" }
+		for i, row in ipairs(boardCache[kind]) do
+			table.insert(lines, string.format("%2d. %-14s %s", i, row.name:sub(1, 14), (kind == "level" and "LV " or "") .. row.value))
+		end
+		if #boardCache[kind] == 0 then
+			table.insert(lines, "  (nobody yet)")
+		end
+		boardText[kind].Text = table.concat(lines, "\n")
+	end
+	boardText.footer.Text = boardCache.global and "ALL SERVERS - UPDATES EVERY 2 MINUTES" or "THIS SERVER ONLY (ALL SERVERS ONCE THE GAME IS PUBLISHED)"
+end
+
+local function refreshBoards()
+	local global = false
+	for _, kind in ipairs({ "level", "kills" }) do
+		local rows
+		local store = boardStores[kind]
+		if store then
+			local ok, page = pcall(function()
+				return store:GetSortedAsync(false, 10):GetCurrentPage()
+			end)
+			if ok and #page > 0 then
+				rows = {}
+				for _, entry in ipairs(page) do
+					table.insert(rows, { name = nameOf(tonumber(entry.key)), value = entry.value })
+				end
+				global = true
+			end
+		end
+		boardCache[kind] = rows or localBoard(kind)
+	end
+	boardCache.global = global
+	drawBoard()
+end
+
+task.spawn(function()
+	while true do
+		refreshBoards()
+		task.wait(boardCache.global and CONFIG.LEADERBOARD_REFRESH or 10)
+	end
+end)
+
+-- weekend 2x banner (the HUD and menu read this)
+task.spawn(function()
+	while true do
+		ReplicatedStorage:SetAttribute("Weekend2x", isWeekend())
+		task.wait(30)
+	end
+end)
+
+MetaFunction.OnServerInvoke = function(player, action, arg)
+	local profile = profiles[player]
+	if not profile or not profile.loaded then
+		return { ok = false, message = "STILL LOADING - TRY AGAIN" }
+	end
+	if action == "daily" then
+		return dailyStatus(profile)
+	elseif action == "claim" then
+		local status = dailyStatus(profile)
+		if not status.canClaim then
+			return { ok = false, message = "ALREADY CLAIMED TODAY" }
+		end
+		profile.streak = status.streak + 1
+		profile.lastClaimDay = dayNumber()
+		awardScrap(player, CONFIG.DAILY_REWARDS[status.day] or 50, "DAILY REWARD DAY " .. status.day, true)
+		if status.day == 7 and not profile.gold then
+			profile.gold = true
+			NotifyEvent:FireClient(player, "UNLOCKED: GOLD SUIT PAINT", Color3.fromRGB(255, 214, 90))
+		end
+		checkAchievements(player)
+		queueSave(player)
+		return dailyStatus(profile)
+	elseif action == "quests" then
+		local rows = {}
+		for _, q in ipairs(todaysQuests(profile).list) do
+			local def = QUEST_BY_ID[q.id]
+			if def then
+				table.insert(rows, { text = def.text, progress = q.progress, goal = def.goal, done = q.done, reward = def.reward })
+			end
+		end
+		return { ok = true, quests = rows, secondsLeft = secondsToReset(), weekend = isWeekend(), xp = CONFIG.QUEST_XP }
+	elseif action == "achievements" then
+		local rows, unlocked = {}, 0
+		for _, a in ipairs(ACHIEVEMENTS) do
+			local done = profile.achievements[a.id] == true
+			unlocked = unlocked + (done and 1 or 0)
+			table.insert(rows, { name = a.name, hint = a.hint, reward = a.reward, unlocked = done,
+				progress = a.count and math.min(profile.counts[a.count] or 0, a.goal) or nil, goal = a.goal })
+		end
+		return { ok = true, achievements = rows, unlocked = unlocked }
+	elseif action == "board" then
+		return { ok = true, level = boardCache.level, kills = boardCache.kills, global = boardCache.global }
+	elseif action == "code" then
+		if profile.lastCode and os.clock() - profile.lastCode < 1 then
+			return { ok = false, message = "SLOW DOWN" }
+		end
+		profile.lastCode = os.clock()
+		if typeof(arg) ~= "string" or #arg > 40 then
+			return { ok = false, message = "UNKNOWN CODE" }
+		end
+		local code = (string.upper(arg):gsub("%s", ""))
+		local reward = CONFIG.CODES[code]
+		if not reward then
+			return { ok = false, message = "UNKNOWN CODE" }
+		elseif profile.codes[code] then
+			return { ok = false, message = "ALREADY USED" }
+		end
+		profile.codes[code] = true
+		awardScrap(player, reward, "CODE " .. code, true)
+		queueSave(player)
+		return { ok = true, message = "+" .. reward .. " SCRAP" }
+	end
+	return { ok = false, message = "BAD REQUEST" }
+end
+end -- task 010 section
 
 local function setStage(stage, progress, goal)
 	ReplicatedStorage:SetAttribute("Stage", stage)
@@ -2546,6 +3151,7 @@ local function completeChapter1()
 	end
 	notifyAll("CHAPTER 1 COMPLETE", GREEN)
 	awardEveryone(CONFIG.SCRAP_CHAPTER, "CHAPTER 1 COMPLETE")
+	chapterCleared(1)
 	task.wait(4)
 	if token == chapterToken then
 		notifyAll("THE RIFT IS SEALED... BUT THE SIGNAL DOES NOT STOP", WARN)
@@ -2579,6 +3185,8 @@ console.Touched:Connect(function(hit)
 		stats.Shards.Value = stats.Shards.Value + carrying
 	end
 	awardScrap(plr, CONFIG.SCRAP_SHARD * carrying, "SHARDS DELIVERED")
+	track(plr, "shard", carrying)
+	track(plr, "objective", carrying)
 	notifyAll(plr.DisplayName .. " DELIVERED " .. carrying .. " SHARD(S)  [" .. progress .. "/" .. CONFIG.SHARDS_TO_WIN .. "]", GLOW)
 	if progress >= CONFIG.SHARDS_TO_WIN then
 		task.spawn(completeChapter1)
@@ -2694,6 +3302,7 @@ local function damageNode(m, amount, attacker)
 	m:Destroy()
 	if attacker then
 		awardScrap(attacker, CONFIG.SCRAP_NODE, "HIVE NODE")
+		track(attacker, "objective", 1)
 	end
 	local goal = ReplicatedStorage:GetAttribute("Goal")
 	local progress = math.min(ReplicatedStorage:GetAttribute("Progress") + 1, goal)
@@ -2741,6 +3350,9 @@ end)
 --   shockwave (jump over it) -> summon Hollowers -> head opens (vulnerable).
 --   Every attack is telegraphed by BOSS_TELEGRAPH seconds of glow and shaking.
 ---------------------------------------------------------------------------
+-- (inside a do-block to stay under Luau's 200 top-level locals; these four are used outside it)
+local boss, clearBoss, chapter2Complete, damageBoss
+do
 local bossFolder = Instance.new("Folder")
 bossFolder.Name = "Boss"
 bossFolder.Parent = workspace
@@ -2750,7 +3362,7 @@ local BOSS_SPOT = CONFIG.UNDERGRID_OFFSET + Vector3.new(0, 0, -200) -- ground po
 local BOSS_HEIGHT = 5.5 * BOSS_SCALE                               -- body centre above the ground
 local WEAK = Color3.fromRGB(255, 235, 140)
 
-local boss = nil -- { model, parts, petals, maw, weak, light, yaw, open, openTarget, shake, glow, slam, alive, vulnerable, hp, maxHp }
+boss = nil -- { model, parts, petals, maw, weak, light, yaw, open, openTarget, shake, glow, slam, alive, vulnerable, hp, maxHp }
 
 -- petal around the maw. open 0 = folded shut over the maw, 1 = spread wide
 local function petalOffset(angle, open)
@@ -2816,7 +3428,7 @@ local function spawnBoss(maxHp)
 	}
 end
 
-local function clearBoss()
+clearBoss = function()
 	if boss then
 		boss.alive = false
 		boss.model:Destroy()
@@ -2982,7 +3594,7 @@ local function bossLoop(token)
 end
 
 -- announce: false when a save is restored straight into "Complete" (go on to Chapter 3 at once)
-local function chapter2Complete(announce)
+chapter2Complete = function(announce)
 	local token = chapterToken
 	transitioning = true
 	setStage("Complete", 1, 1)
@@ -2992,6 +3604,7 @@ local function chapter2Complete(announce)
 		notifyAll("CHAPTER 2 COMPLETE — THE SIGNAL GOES QUIET", GREEN)
 		awardEveryone(CONFIG.SCRAP_BOSS, "MIND WARDEN DEFEATED")
 		task.delay(1.5, awardEveryone, CONFIG.SCRAP_CHAPTER, "CHAPTER 2 COMPLETE")
+		chapterCleared(2)
 		task.delay(6, function()
 			if token == chapterToken then
 				notifyAll("...BUT THE TOWER IS PICKING SOMETHING UP AGAIN", WARN)
@@ -3028,7 +3641,7 @@ local function defeatBoss()
 end
 
 -- returns true if the hit did damage (the head must be open)
-local function damageBoss(amount)
+damageBoss = function(amount)
 	if not boss or not boss.alive or not boss.vulnerable then
 		return false
 	end
@@ -3054,6 +3667,7 @@ startBossStage = function()
 	spawnBoss(maxHp)
 	task.spawn(bossLoop, chapterToken)
 end
+end -- Mind Warden section
 
 ---------------------------------------------------------------------------
 -- Chapter 3: LOWBAND (story in docs/STORY.md)
@@ -3125,6 +3739,7 @@ local function collectFile(file, plr)
 	ReplicatedStorage:SetAttribute("Progress", progress)
 	notifyAll("LOWBAND FILE FOUND [" .. progress .. "/" .. goal .. "]", LOWBAND_YELLOW)
 	awardScrap(plr, CONFIG.SCRAP_FILE, "LOWBAND FILE")
+	track(plr, "objective", 1)
 	local line = FILE_LINES[progress]
 	if line then
 		radio(line[1], line[2])
@@ -3250,6 +3865,7 @@ local function completeRelay(m, r, inside)
 	notifyAll("POWER RELAY ONLINE [" .. progress .. "/" .. goal .. "]", GREEN)
 	for _, t in ipairs(inside) do
 		awardScrap(t.plr, CONFIG.SCRAP_RELAY, "RELAY")
+		track(t.plr, "objective", 1)
 	end
 	local line = RELAY_LINES[progress]
 	if line then
@@ -3457,6 +4073,7 @@ chapter3Complete = function(announce)
 	radio("WHCK", "This is WHCK 85.5, Hollow Creek... if you can hear this - it's working!")
 	notifyAll("CHAPTER 3 COMPLETE — THE CARRIER IS SILENT", GREEN)
 	awardEveryone(CONFIG.SCRAP_CHAPTER, "CHAPTER 3 COMPLETE")
+	chapterCleared(3)
 	radioLater(7, "DOT", "...it stopped. It really stopped.")
 	radioLater(13, "RICKY", "Wait. Do you hear that? One pulse... from way down below.")
 	task.delay(18, function()
@@ -3567,6 +4184,7 @@ startChapter = function(n, stageState)
 		local profile = profiles[plr]
 		if profile then
 			profile.bestChapter = math.max(profile.bestChapter, chapter) -- unlocks it in CHAPTER SELECT
+			profile.diedThisChapter = false -- UNTOUCHED: no deaths from here to the end of the chapter
 		end
 	end
 
@@ -3593,6 +4211,7 @@ TransformEvent.OnServerEvent:Connect(function(player)
 	s.lastTransform = os.clock()
 	-- F: pilot -> robot -> car -> robot
 	setMode(player, s.mode == "Robot" and "Vehicle" or "Robot")
+	track(player, "transform", 1)
 end)
 
 -- G / SUIT: pilot <-> robot. Taking the suit off only works in Hollow Creek.
@@ -3810,6 +4429,7 @@ ShiftEvent.OnServerEvent:Connect(function(player)
 	local delta = inTown and CONFIG.UNDERGRID_OFFSET or -CONFIG.UNDERGRID_OFFSET
 	char:PivotTo(char:GetPivot() + delta)
 	player:SetAttribute("Dimension", inTown and "Undergrid" or "Town")
+	track(player, "shift", 1)
 
 	-- arrival shield: a few seconds to look around before anything can hurt you
 	local oldShield = char:FindFirstChild("RiftShield")
@@ -3886,7 +4506,7 @@ GetSaveFunction.OnServerInvoke = function(player)
 		shake = profile and profile.shake,
 		autoAim = profile and profile.autoAim,
 		look = profile and profile.look,
-		lookCatalog = lookCatalog(),
+		lookCatalog = lookCatalog(profile),
 		fresh = worldIsFresh(),
 		currentChapter = ReplicatedStorage:GetAttribute("Chapter"),
 		chapters = chapterList(),
@@ -4030,6 +4650,7 @@ ShopFunction.OnServerInvoke = function(player, action, id)
 		end
 		profile.scrap = profile.scrap - w.price
 		profile.owned[id] = true
+		task.defer(track, player, "buy", 1) -- FULLY LOADED
 		profile.weapon = id -- equip right away
 		message = "BOUGHT " .. w.name
 	elseif action == "buy" and UPGRADES[id] then
@@ -4069,6 +4690,9 @@ SetLookFunction.OnServerInvoke = function(player, look)
 	end
 	if profile.lastLook and os.clock() - profile.lastLook < 0.3 then
 		return false -- clicking very fast: ignore
+	end
+	if (look.hair and not hairUnlocked(profile, look.hair)) or not paintUnlocked(profile, look.paint) then
+		return false -- not unlocked yet (pilot level / daily streak)
 	end
 	profile.lastLook = os.clock()
 	profile.look = look
@@ -4114,6 +4738,10 @@ local function onPlayerAdded(player)
 	local scrap = Instance.new("IntValue")
 	scrap.Name = "Scrap"
 	scrap.Parent = stats
+	local level = Instance.new("IntValue")
+	level.Name = "Level"
+	level.Value = 1
+	level.Parent = stats
 	task.spawn(loadProfile, player)
 
 	local function onCharacterAdded(char)
@@ -4137,7 +4765,15 @@ local function onPlayerAdded(player)
 			local profile = profiles[player]
 			applyPilotLook(player, char, profile and profile.look)
 			applyRobotArmor(char)
+			char:SetAttribute("SuitPaint", profile and profile.look and profile.look.paint or 1)
+			repaintSuit(char)
 			setLayerVisible(char, "ShiftframeArmor", false)
+			hum.Died:Connect(function()
+				local p = profiles[player]
+				if p then
+					p.diedThisChapter = true -- UNTOUCHED achievement
+				end
+			end)
 			hum.WalkSpeed = CONFIG.PILOT_SPEED
 			hum.UseJumpPower = true
 			hum.JumpPower = CONFIG.PILOT_JUMP

@@ -35,6 +35,7 @@ To build a place file without Studio: `rojo build -o Signal85.rbxlx`.
 | R | SWAP | Swap to the next weapon you own |
 | E | RIFT / tap prompt | Shift through the rift, open hotel doors, use the elevator |
 | M / K | MENU / SAVE | Pause menu / save the game |
+| REWARDS button | REWARDS | Daily reward, daily quests, achievements, top pilots, codes |
 | H | ? | How to play |
 | - / + | - / + | Darker / brighter |
 
@@ -47,6 +48,9 @@ A yellow marker always points to your next target.
 - **Chapter 3, LOWBAND:** recover the lab files, power the relays, escort the Carrier and win the race.
 - **The Grand Hotel** is used in every chapter: 5 floors, guest rooms (press E at a door), washrooms, grand stairs and elevators. It changes a little each chapter.
 - **Scrap** from creatures and missions buys weapons and upgrades at the garage or from the menu.
+- **Pilot level:** gameplay Scrap also gives XP. Levels unlock suit paints (5, 10), the ponytail hair (15) and the VETERAN title (20).
+- **Come back daily:** a 7-day reward streak, 3 daily quests, 16 achievements, the TOP PILOTS board by the garage, codes, and 2x Scrap + XP on weekends (Fri–Sun UTC).
+  For testing, `CONFIG.DEBUG_DAY_OFFSET` (pretend it's N days later) and `CONFIG.DEBUG_FORCE_WEEKEND` are at the top of the server script.
 - **Robot mode:** armored, can shoot. **Vehicle mode:** fast, no weapon, half shockwave damage.
 
 ## Saving
