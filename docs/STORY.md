@@ -14,9 +14,10 @@ The other side of the rift. An exact copy of Hollow Creek, but dead: red street 
 ## The Hollowers
 Tall shadow creatures. Their heads open like dark flowers around a glowing red maw. They drift **through** walls rather than around them and hunt anything that crosses over.
 
-## The Shiftframes (the players)
-Years ago a government lab outside town — **Project LOWBAND** — built machines to explore "other frequencies." When the program was shut down, the machines were hidden and forgotten. When the rift opened, they woke up. Shiftframes are armored robots that fold into fast cars.
-- **Robot mode:** armored, can fire the arm blaster.
+## The Shiftframes and their pilots (the players)
+Years ago a government lab outside town — **Project LOWBAND** — built machines to explore "other frequencies." When the program was shut down, the machines were hidden and forgotten. When the rift opened, they woke up — and each one **chose a pilot** from the kids of Hollow Creek. Pilot and machine are synced: the armor folds around the pilot when they suit up. Shiftframes are armored robots that fold into fast cars.
+- **Pilot:** the teen themselves, in their own 80s style; walks around town, can't fight.
+- **Robot mode:** suited up, armored, can fire the arm blaster.
 - **Vehicle mode:** very fast, no weapon.
 
 ## The mission
@@ -30,9 +31,16 @@ Each time the rift is sealed it reopens. Something deeper in the Undergrid is st
 ## Chapters
 1. **Seal the Rift** — collect Signal Shards in the Undergrid and feed them to the Signal Console. The rift closes... but the signal does not stop.
 2. **The Source** — sealing the rift only cut one line. The signal is now fed by **Hive Nodes**, pulsing growths rooted in the Undergrid. Destroying all three wakes their guardian, **the Mind Warden**, a giant Hollower that has been listening from beneath the Undergrid's radio tower. Defeat it and the signal finally goes quiet... for now.
-3. *(not written yet)*
+3. **LOWBAND** — the signal returns, weaker, and the town kids trace it to the abandoned **Project LOWBAND lab** in the woods west of town (empty since 1979). Five **LOWBAND files** (three in the lab, two in its Undergrid copy) reveal that the scientists built **the Carrier**, a machine to "listen to other frequencies" — and something listened back. The Shiftframes were built to "go where people can't". Restarting three **power relays** in the Undergrid lets the Carrier shut down safely; the Shiftframes defend it while it powers down, then race its shutdown code to the radio tower, and WHCK 85.5 FM broadcasts it. The signal stops... until a single pulse comes from far beneath the Undergrid. A last file: *"LOWBAND was not the first. Site 2."*
+4. *(not written yet — Site 2)*
+
+## Characters
+- **Dot** and **Ricky** — Hollow Creek kids who talk to the Shiftframes over walkie-talkies (channel 4). Dot is calm and reads the files; Ricky is excitable and watches the town.
+
+## Creatures
+- **Hollowers** — see above.
+- **Static Hounds** — low, fast, crackling shapes that hunt in packs of three. Faster than a robot on foot, weak to the blaster; only a Shiftframe in car mode can outrun them. First seen in Chapter 3.
 
 ## Future story hooks (not built yet)
-- **Walkie-talkie kids** — town kids who radio in hints and story beats.
-- **LOWBAND files** — collectible lab documents revealing who built the Shiftframes and why.
-- **WHCK 85.5 FM** — the radio tower's station; used for broadcasts/intros.
+- **Site 2** — the place the last LOWBAND file points to.
+- **WHCK 85.5 FM** — the radio tower's station; used for broadcasts/intros (and the Chapter 3 finale).

@@ -28,6 +28,11 @@ local remotes = ReplicatedStorage:WaitForChild("Signal85Remotes")
 local GetSave = remotes:WaitForChild("GetSave")
 local ChooseStart = remotes:WaitForChild("ChooseStart")
 local SaveGame = remotes:WaitForChild("SaveGame")
+local Shop = remotes:WaitForChild("Shop")
+local RewardEvent = remotes:WaitForChild("Reward")
+local SettingsEvent = remotes:WaitForChild("Settings")
+local ElevatorMenuEvent = remotes:WaitForChild("ElevatorMenu")
+local ElevatorGoEvent = remotes:WaitForChild("ElevatorGo")
 
 local AMBER = Color3.fromRGB(255, 214, 140)
 local RED = Color3.fromRGB(255, 60, 70)
@@ -160,6 +165,23 @@ local function button(parent, label, color, onClick, order)
 	return b
 end
 
+-- the character screen puts the panel on the right and points the camera at your character
+local sideLayout = false
+local function setSideLayout(on)
+	if on == sideLayout then
+		return
+	end
+	sideLayout = on
+	backdrop.BackgroundTransparency = on and 1 or 0.25
+	panel.AnchorPoint = on and Vector2.new(1, 0.5) or Vector2.new(0.5, 0.5)
+	panel.Position = on and UDim2.new(1, -16, 0.5, 0) or UDim2.fromScale(0.5, 0.5)
+	panel.Size = on and UDim2.new(0.46, 0, 0, 0) or UDim2.new(0.94, 0, 0, 0)
+	local cam = workspace.CurrentCamera
+	if not on then
+		cam.CameraType = Enum.CameraType.Custom
+	end
+end
+
 local function clearScreen()
 	for _, child in ipairs(panel:GetChildren()) do
 		if child:IsA("GuiObject") then
@@ -169,6 +191,7 @@ local function clearScreen()
 	table.clear(buttons)
 	table.clear(actions)
 	focus = 0
+	setSideLayout(false)
 end
 
 local function onNav(_, inputState, input)
@@ -292,6 +315,52 @@ local PICTURES = {
 		part(m, { Shape = Enum.PartType.Ball, Size = Vector3.one * 4, Color = CYAN, Material = Enum.Material.Neon, Transparency = 0.4, CFrame = CFrame.new(-14, 0, 0) })
 		return m
 	end,
+	file = function()
+		local m = Instance.new("Model")
+		part(m, { Size = Vector3.new(2.4, 0.4, 1.8), Color = Color3.fromRGB(255, 220, 120), Material = Enum.Material.Neon, CFrame = CFrame.Angles(0.5, 0.3, 0) })
+		part(m, { Size = Vector3.new(0.8, 0.42, 0.3), Color = Color3.fromRGB(210, 180, 110), Material = Enum.Material.SmoothPlastic,
+			CFrame = CFrame.Angles(0.5, 0.3, 0) * CFrame.new(-0.6, 0, -1) })
+		return m
+	end,
+	relay = function()
+		local m = Instance.new("Model")
+		part(m, { Shape = Enum.PartType.Cylinder, Size = Vector3.new(0.3, 18, 18), Color = Color3.fromRGB(255, 220, 120), Material = Enum.Material.Neon,
+			Transparency = 0.4, CFrame = CFrame.Angles(0, 0, math.rad(90)) })
+		part(m, { Size = Vector3.new(2, 10, 2), Color = Color3.fromRGB(60, 60, 70), Material = Enum.Material.Metal, CFrame = CFrame.new(0, 5, 0) })
+		part(m, { Shape = Enum.PartType.Ball, Size = Vector3.one * 3, Color = GREEN, Material = Enum.Material.Neon, CFrame = CFrame.new(0, 11, 0) })
+		part(m, { Size = Vector3.new(2, 3, 1.2), Color = Color3.fromRGB(70, 92, 125), Material = Enum.Material.DiamondPlate, CFrame = CFrame.new(4, 1.5, 2) })
+		return m
+	end,
+	carrier = function()
+		local m = Instance.new("Model")
+		part(m, { Shape = Enum.PartType.Cylinder, Size = Vector3.new(2, 12, 12), Color = Color3.fromRGB(50, 52, 58), Material = Enum.Material.DiamondPlate,
+			CFrame = CFrame.new(0, 1, 0) * CFrame.Angles(0, 0, math.rad(90)) })
+		part(m, { Shape = Enum.PartType.Cylinder, Size = Vector3.new(16, 4, 4), Color = Color3.fromRGB(70, 72, 80), Material = Enum.Material.Metal,
+			CFrame = CFrame.new(0, 10, 0) * CFrame.Angles(0, 0, math.rad(90)) })
+		for i, y in ipairs({ 5, 10, 15 }) do
+			part(m, { Shape = Enum.PartType.Cylinder, Size = Vector3.new(0.6, 8 - i, 8 - i), Color = Color3.fromRGB(255, 120, 200), Material = Enum.Material.Neon,
+				CFrame = CFrame.new(0, y, 0) * CFrame.Angles(0, 0, math.rad(90)) })
+		end
+		part(m, { Shape = Enum.PartType.Ball, Size = Vector3.one * 6, Color = Color3.fromRGB(255, 120, 200), Material = Enum.Material.Neon, CFrame = CFrame.new(0, 19, 0) })
+		return m
+	end,
+	hound = function()
+		local m = Instance.new("Model")
+		local body = Color3.fromRGB(40, 44, 54)
+		local static = Color3.fromRGB(200, 230, 255)
+		part(m, { Size = Vector3.new(2.4, 1.6, 4.4), Color = body, Material = Enum.Material.Slate, CFrame = CFrame.new() })
+		part(m, { Size = Vector3.new(1.6, 1.4, 1.8), Color = body, Material = Enum.Material.Slate, CFrame = CFrame.new(0, 0.5, -2.8) })
+		for _, side in ipairs({ -1, 1 }) do
+			part(m, { Size = Vector3.new(0.35, 0.25, 0.1), Color = static, Material = Enum.Material.Neon, CFrame = CFrame.new(side * 0.45, 0.75, -3.72) })
+			for _, z in ipairs({ -1.6, 1.6 }) do
+				part(m, { Size = Vector3.new(0.4, 1.8, 0.4), Color = body, Material = Enum.Material.Slate, CFrame = CFrame.new(side * 0.9, -1.4, z) })
+			end
+		end
+		for k = 1, 4 do
+			part(m, { Size = Vector3.new(0.2, 1, 0.2), Color = static, Material = Enum.Material.Neon, CFrame = CFrame.new(0, 1.2, -1.6 + k * 0.8) * CFrame.Angles(0.5, 0, 0) })
+		end
+		return m
+	end,
 	marker = function()
 		local m = Instance.new("Model")
 		part(m, { Size = Vector3.new(3, 3, 0.4), Color = YELLOW, Material = Enum.Material.Neon, CFrame = CFrame.Angles(0, 0, math.rad(45)) })
@@ -341,6 +410,7 @@ local summary = nil  -- from the server: save info, chapters, bestChapter
 local inGame = false -- false: title menu after the intro, true: pause menu
 local showMain       -- forward declarations
 local showBriefing
+local showCharacter
 
 local BRIEFINGS = {
 	[1] = {
@@ -358,13 +428,22 @@ local BRIEFINGS = {
 			{ "node", "1. DESTROY x3", RED, "Pulsing red HIVE NODES in the Undergrid. Robot mode + BLAST. They call Hollowers when you are near." },
 			{ "boss", "2. DEFEAT", YELLOW, "The MIND WARDEN by the Undergrid radio tower. Shoot it only when its head opens and glows yellow." },
 			{ "shockwave", "3. JUMP", RED, "Its slam sends a red SHOCKWAVE ring. Jump over it. Car mode takes half damage." },
-			{ "cannon", "YOUR WEAPON", CYAN, "PULSE CANNON: " .. FIRE .. " in robot mode. Each hit also damages enemies around it." },
+			{ "cannon", "YOUR WEAPON", CYAN, FIRE .. " in robot mode. Earn SCRAP and buy stronger weapons at the Garage or MENU > SHOP." },
+		},
+	},
+	[3] = {
+		goal = "Find the LOWBAND files, restart the relays, protect the Carrier, then race its code to the radio tower.",
+		cards = {
+			{ "file", "1. FIND x5", YELLOW, "Yellow LOWBAND FILES in the lab in the woods west of town. 2 are only in its Undergrid copy: use the small rift by the lab." },
+			{ "relay", "2. HOLD x3", GREEN, "Stand in each RELAY CIRCLE around the Undergrid lab until it is full. Leaving pauses it." },
+			{ "carrier", "3. DEFEND + RACE", Color3.fromRGB(255, 120, 200), "Protect THE CARRIER until it shuts down, then drive its code to the radio tower console before time runs out." },
+			{ "hound", "WATCH OUT", RED, "STATIC HOUNDS hunt in packs and run faster than a robot. Shoot them, or switch to car mode to escape." },
 		},
 	},
 }
 
 local function stageName(stage)
-	return ({ Shards = "Collecting shards", Nodes = "Hive Nodes", Boss = "Mind Warden", Complete = "Complete" })[stage] or tostring(stage)
+	return ({ Shards = "Collecting shards", Nodes = "Hive Nodes", Boss = "Mind Warden", Files = "LOWBAND files", Relays = "Power relays", Carrier = "Defend the Carrier", Complete = "Complete" })[stage] or tostring(stage)
 end
 
 local function timeAgo(seconds)
@@ -423,6 +502,30 @@ local function refreshSummary()
 	if summary.brightness then
 		player:SetAttribute("LightLevel", summary.brightness) -- Signal85Client applies it
 	end
+	if summary.graphics then
+		player:SetAttribute("GraphicsQuality", summary.graphics)
+	end
+	if summary.shake ~= nil then
+		player:SetAttribute("CameraShake", summary.shake)
+	end
+	if summary.autoAim ~= nil then
+		player:SetAttribute("AutoAim", summary.autoAim)
+	end
+end
+
+-- the story opening scene (IntroBroadcast plays it while PlayStory is true); then `after`
+local function playStory(after)
+	clearScreen()
+	backdrop.Visible = false -- the menu stays "open" (MenuActive) so the HUD stays hidden
+	local done
+	done = player:GetAttributeChangedSignal("PlayStory"):Connect(function()
+		if player:GetAttribute("PlayStory") == false then
+			done:Disconnect()
+			backdrop.Visible = true
+			after()
+		end
+	end)
+	player:SetAttribute("PlayStory", true)
 end
 
 local function choose(choice, n)
@@ -438,7 +541,22 @@ local function choose(choice, n)
 		return false
 	end
 	showToast(result.message, GREEN)
-	showBriefing(result.chapter or ReplicatedStorage:GetAttribute("Chapter") or 1)
+	local chapter = result.chapter or ReplicatedStorage:GetAttribute("Chapter") or 1
+	-- NEW GAME: (pick your pilot the first time) -> story scene -> briefing. CONTINUE: straight to the briefing.
+	local function afterPilot()
+		if choice == "new" then
+			playStory(function()
+				showBriefing(chapter)
+			end)
+		else
+			showBriefing(chapter)
+		end
+	end
+	if summary and summary.look == nil then
+		showCharacter(afterPilot)
+	else
+		afterPilot()
+	end
 	return true
 end
 
@@ -467,6 +585,267 @@ local function showConfirmNew()
 		showMain()
 	end, 4)
 	setFocus(2)
+end
+
+---------------------------------------------------------------------------
+-- Shop (Scrap Garage): weapons and upgrades. The server owns prices and Scrap.
+---------------------------------------------------------------------------
+local shopTab = "weapons"
+local shopFromGarage = false -- opened at the Garage: BACK closes the menu instead of going to the pause menu
+local showShop
+
+local function shopRow(order, color, title, desc, stats, actionLabel, actionColor, onAction)
+	local row = make("Frame", {
+		BackgroundColor3 = Color3.fromRGB(22, 18, 28), BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = order,
+	}, panel)
+	make("UIStroke", { Color = color, Thickness = 2 }, row)
+	pad(row, 8)
+	make("Frame", { BackgroundColor3 = color, BorderSizePixel = 0, Size = UDim2.new(0, 10, 1, 0) }, row)
+	local info = make("Frame", { BackgroundTransparency = 1, Position = UDim2.fromOffset(20, 0), Size = UDim2.new(1, -210, 0, 0), AutomaticSize = Enum.AutomaticSize.Y }, row)
+	list(info, 2).HorizontalAlignment = Enum.HorizontalAlignment.Left
+	text(info, { Text = title, TextSize = 22, TextColor3 = color, TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = 1 })
+	text(info, { Text = desc, Font = Enum.Font.Code, TextSize = 16, TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = 2 })
+	if stats then
+		text(info, { Text = stats, Font = Enum.Font.Code, TextSize = 14, TextColor3 = DIM, TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = 3 })
+	end
+	local b = button(row, actionLabel, actionColor, onAction, 0)
+	b.AnchorPoint = Vector2.new(1, 0.5)
+	b.Position = UDim2.new(1, 0, 0.5, 0)
+	b.Size = UDim2.fromOffset(180, 48)
+	b.TextSize = 18
+	return row
+end
+
+local function shopCall(action, id)
+	local ok, result = pcall(function()
+		return Shop:InvokeServer(action, id)
+	end)
+	if not ok or type(result) ~= "table" then
+		showToast("SHOP ERROR - TRY AGAIN", RED)
+		return nil
+	end
+	if result.message and result.message ~= "" then
+		showToast(result.message, result.ok and GREEN or RED)
+	end
+	return result.state
+end
+
+showShop = function(state)
+	state = state or shopCall("list")
+	if not state then
+		return
+	end
+	clearScreen()
+	text(panel, { Text = "SCRAP GARAGE", TextSize = 34, TextColor3 = Color3.fromRGB(255, 170, 40), LayoutOrder = 1 })
+	text(panel, { Text = "SCRAP: " .. state.scrap, TextSize = 24, TextColor3 = YELLOW, LayoutOrder = 2 })
+	text(panel, {
+		Text = "Earn Scrap: shard +10, Hollower +2, Hive Node +25, Mind Warden +200, chapter +100.",
+		Font = Enum.Font.Code, TextSize = 15, TextColor3 = DIM, LayoutOrder = 3,
+	})
+
+	local tabs = make("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 52), LayoutOrder = 4 }, panel)
+	list(tabs, 12, true)
+	for i, tab in ipairs({ { "weapons", "WEAPONS" }, { "upgrades", "UPGRADES" } }) do
+		local active = shopTab == tab[1]
+		local b = button(tabs, tab[2], active and YELLOW or DIM, function()
+			shopTab = tab[1]
+			showShop(state)
+		end, i)
+		b.Size = UDim2.fromOffset(200, 48)
+	end
+
+	local order = 5
+	if shopTab == "weapons" then
+		for _, w in ipairs(state.weapons) do
+			local owned = state.owned[w.id]
+			local equipped = state.weapon == w.id
+			local label, color, action
+			if equipped then
+				label, color = "EQUIPPED", GREEN
+			elseif owned then
+				label, color, action = "EQUIP", CYAN, "equip"
+			else
+				label, color, action = "BUY " .. w.price, state.scrap >= w.price and YELLOW or DIM, "buy"
+			end
+			shopRow(order, w.color, w.name, w.desc, w.stats, label, color, function()
+				if action then
+					showShop(shopCall(action, w.id))
+				end
+			end)
+			order = order + 1
+		end
+	else
+		for _, u in ipairs(state.upgrades) do
+			local price = u.prices[u.level + 1]
+			local label = price and ("BUY " .. price) or "MAX"
+			local color = price and (state.scrap >= price and YELLOW or DIM) or GREEN
+			shopRow(order, CYAN, u.name .. "  " .. string.rep("■", u.level) .. string.rep("□", #u.prices - u.level), u.desc, nil, label, color, function()
+				if price then
+					showShop(shopCall("buy", u.id))
+				end
+			end)
+			order = order + 1
+		end
+	end
+
+	button(panel, "BACK", DIM, function()
+		if shopFromGarage then
+			setMenuOpen(false)
+		else
+			showMain()
+		end
+	end, order)
+	setFocus(1)
+end
+
+-- YOUR PILOT: outfit, hair, hair colour, skin tone, or your own Roblox avatar.
+-- Every change is sent to the server, which dresses your character; the camera faces you.
+local SetLook = remotes:WaitForChild("SetLook")
+
+showCharacter = function(onDone)
+	local catalog = summary and summary.lookCatalog
+	if not catalog then
+		showToast("STILL LOADING - TRY AGAIN", RED)
+		return
+	end
+	local look = table.clone(summary.look or { own = false, outfit = 1, hair = 1, hairColor = 1, skin = 2 })
+	if look.own then
+		look = { own = true, outfit = 1, hair = 1, hairColor = 1, skin = 2 }
+	end
+
+	local function send()
+		local ok, accepted = pcall(function()
+			return SetLook:InvokeServer(look.own and { own = true } or look)
+		end)
+		if ok and accepted then
+			summary.look = look.own and { own = true } or table.clone(look)
+		end
+	end
+
+	local function render()
+		clearScreen()
+		setSideLayout(true)
+		-- face the character from the front, a little to the left of the panel
+		local char = player.Character
+		local hrp = char and char:FindFirstChild("HumanoidRootPart")
+		if hrp then
+			local cam = workspace.CurrentCamera
+			cam.CameraType = Enum.CameraType.Scriptable
+			local front = hrp.CFrame.LookVector
+			local right = hrp.CFrame.RightVector
+			cam.CFrame = CFrame.lookAt(hrp.Position + front * 9 + Vector3.new(0, 1.5, 0) - right * 2.5, hrp.Position + Vector3.new(0, 0.8, 0) - right * 2.5)
+		end
+
+		text(panel, { Text = "YOUR PILOT", TextSize = 32, TextColor3 = RED, LayoutOrder = 1 })
+		text(panel, { Text = "Pick any look you like; change it any time in the menu. HAIR COLOR is for the (ANY COLOR) hair styles.",
+			Font = Enum.Font.Code, TextSize = 15, TextColor3 = DIM, LayoutOrder = 2 })
+
+		local order = 3
+		local function chooser(title, key, names, colors)
+			local row = make("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 52), LayoutOrder = order }, panel)
+			order = order + 1
+			list(row, 8, true)
+			text(row, { Text = title, TextSize = 16, AutomaticSize = Enum.AutomaticSize.None, Size = UDim2.new(0.3, 0, 1, 0),
+				TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = 1 })
+			local count = names and #names or #colors
+			local function step(delta)
+				look[key] = (look[key] - 1 + delta) % count + 1
+				look.own = false
+				send()
+				render()
+			end
+			local prev = button(row, "<", AMBER, function()
+				step(-1)
+			end, 2)
+			prev.Size = UDim2.fromOffset(48, 48)
+			local value = text(row, {
+				Text = names and names[look[key]] or "■■■■", TextSize = 18, AutomaticSize = Enum.AutomaticSize.None,
+				Size = UDim2.new(0.34, 0, 1, 0), LayoutOrder = 3, TextColor3 = colors and colors[look[key]] or AMBER,
+				TextTransparency = look.own and 0.6 or 0,
+			})
+			value.TextXAlignment = Enum.TextXAlignment.Center
+			local nextButton = button(row, ">", AMBER, function()
+				step(1)
+			end, 4)
+			nextButton.Size = UDim2.fromOffset(48, 48)
+		end
+		chooser("OUTFIT", "outfit", catalog.outfits, nil)
+		chooser("HAIR", "hair", catalog.hairs, nil)
+		chooser("HAIR COLOR", "hairColor", nil, catalog.hairColors)
+		chooser("SKIN TONE", "skin", nil, catalog.skins)
+
+		button(panel, look.own and "USING MY ROBLOX AVATAR" or "USE MY ROBLOX AVATAR", look.own and GREEN or DIM, function()
+			look.own = not look.own
+			send()
+			render()
+		end, order)
+		button(panel, "DONE", GREEN, function()
+			if summary.look == nil then
+				send() -- keep the default look if nothing was changed
+			end
+			if onDone then
+				onDone()
+			else
+				showMain()
+			end
+		end, order + 1)
+		setFocus(#buttons)
+	end
+	render()
+end
+
+-- SETTINGS: graphics quality and camera shake (Signal85Client applies them; the server saves them)
+local function showSettings()
+	clearScreen()
+	text(panel, { Text = "SETTINGS", TextSize = 34, TextColor3 = RED, LayoutOrder = 1 })
+
+	local current = player:GetAttribute("GraphicsQuality") or (IS_PHONE and 2 or 3)
+	text(panel, { Text = "GRAPHICS", TextSize = 22, LayoutOrder = 2 })
+	text(panel, { Text = "LOW is smoothest on older phones. HIGH has sun rays, more glow and particles.", Font = Enum.Font.Code, TextSize = 15, TextColor3 = DIM, LayoutOrder = 3 })
+	local row = make("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 52), LayoutOrder = 4 }, panel)
+	list(row, 10, true)
+	for q, name in ipairs({ "LOW", "MEDIUM", "HIGH" }) do
+		local b = button(row, name, q == current and GREEN or DIM, function()
+			player:SetAttribute("GraphicsQuality", q)
+			SettingsEvent:FireServer("graphics", q)
+			showSettings()
+		end, q)
+		b.Size = UDim2.fromOffset(150, 48)
+	end
+
+	local shakeOn = player:GetAttribute("CameraShake") ~= false
+	text(panel, { Text = "CAMERA SHAKE", TextSize = 22, LayoutOrder = 5 })
+	local shakeRow = make("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 52), LayoutOrder = 6 }, panel)
+	list(shakeRow, 10, true)
+	for i, on in ipairs({ true, false }) do
+		local b = button(shakeRow, on and "ON" or "OFF", on == shakeOn and GREEN or DIM, function()
+			player:SetAttribute("CameraShake", on)
+			SettingsEvent:FireServer("shake", on)
+			showSettings()
+		end, i)
+		b.Size = UDim2.fromOffset(150, 48)
+	end
+
+	local autoOn = player:GetAttribute("AutoAim") ~= false
+	text(panel, { Text = "AUTO-AIM", TextSize = 22, LayoutOrder = 7 })
+	text(panel, { Text = "ON: Q / BLAST shoot the nearest enemy (red ring) by themselves - no mouse needed.", Font = Enum.Font.Code,
+		TextSize = 15, TextColor3 = DIM, LayoutOrder = 8 })
+	local aimRow = make("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 52), LayoutOrder = 9 }, panel)
+	list(aimRow, 10, true)
+	for i, on in ipairs({ true, false }) do
+		local b = button(aimRow, on and "ON" or "OFF", on == autoOn and GREEN or DIM, function()
+			player:SetAttribute("AutoAim", on)
+			SettingsEvent:FireServer("autoaim", on)
+			showSettings()
+		end, i)
+		b.Size = UDim2.fromOffset(150, 48)
+	end
+
+	button(panel, "BACK", DIM, function()
+		showMain()
+	end, 10)
+	setFocus(#buttons)
 end
 
 local function showChapters()
@@ -555,12 +934,23 @@ showMain = function()
 			setMenuOpen(false)
 		end, order)
 		button(panel, "SAVE GAME", CYAN, doSave, order + 1)
+		button(panel, "SHOP", Color3.fromRGB(255, 170, 40), function()
+			shopFromGarage = false
+			showShop()
+		end, order + 2)
 		button(panel, "MISSION BRIEFING", AMBER, function()
 			showBriefing(ReplicatedStorage:GetAttribute("Chapter") or 1)
-		end, order + 2)
+		end, order + 3)
 		if summary and summary.available then
-			button(panel, "CHAPTER SELECT", AMBER, showChapters, order + 3)
+			button(panel, "CHAPTER SELECT", AMBER, showChapters, order + 4)
 		end
+		button(panel, "YOUR PILOT", Color3.fromRGB(255, 170, 200), function()
+			showCharacter(nil)
+		end, order + 5)
+		button(panel, "WATCH THE STORY", AMBER, function()
+			playStory(showMain)
+		end, order + 6)
+		button(panel, "SETTINGS", DIM, showSettings, order + 7)
 	else
 		-- both choices are always shown; CONTINUE explains itself when there is no save
 		local continue = button(panel, hasSave and "CONTINUE SAVED GAME" or "CONTINUE (NO SAVE)", hasSave and GREEN or DIM, function()
@@ -583,6 +973,13 @@ showMain = function()
 		if summary and summary.available and (summary.bestChapter or 1) > 1 then
 			button(panel, "CHAPTER SELECT", AMBER, showChapters, order + 2)
 		end
+		button(panel, "YOUR PILOT", Color3.fromRGB(255, 170, 200), function()
+			showCharacter(nil)
+		end, order + 3)
+		button(panel, "WATCH THE STORY", AMBER, function()
+			playStory(showMain)
+		end, order + 4)
+		button(panel, "SETTINGS", DIM, showSettings, order + 5)
 	end
 	setFocus((inGame or hasSave) and 1 or 2)
 end
@@ -645,6 +1042,56 @@ end, false, Enum.KeyCode.K)
 
 RunService.Heartbeat:Connect(function()
 	corner.Visible = inGame and not backdrop.Visible and not player:GetAttribute("IntroActive")
+end)
+
+-- Grand Hotel elevator: "Use elevator" (E / tap) -> pick a floor
+ElevatorMenuEvent.OnClientEvent:Connect(function(currentFloor, floors)
+	if not inGame or backdrop.Visible then
+		return
+	end
+	setMenuOpen(true)
+	clearScreen()
+	text(panel, { Text = "ELEVATOR", TextSize = 34, TextColor3 = GREEN, LayoutOrder = 1 })
+	text(panel, { Text = "You are on floor " .. tostring(currentFloor) .. ". Where to?", Font = Enum.Font.Code, TextSize = 18, LayoutOrder = 2 })
+	for floor = 1, floors do
+		local here = floor == currentFloor
+		local label = floor == 1 and "FLOOR 1 - LOBBY" or ("FLOOR " .. floor)
+		button(panel, here and (label .. " (YOU ARE HERE)") or label, here and DIM or AMBER, function()
+			if not here then
+				ElevatorGoEvent:FireServer(floor)
+			end
+			setMenuOpen(false)
+		end, 2 + floor)
+	end
+	button(panel, "CANCEL", DIM, function()
+		setMenuOpen(false)
+	end, 3 + floors)
+	setFocus(currentFloor == 1 and 2 or 1)
+end)
+
+-- the Scrap Garage counter in town opens the shop
+game:GetService("ProximityPromptService").PromptTriggered:Connect(function(prompt, who)
+	if prompt.Name == "ShopPrompt" and who == player and inGame and not backdrop.Visible then
+		setMenuOpen(true)
+		shopFromGarage = true
+		showShop()
+	end
+end)
+
+-- "+10 SCRAP" popups that float up on the right
+RewardEvent.OnClientEvent:Connect(function(amount, reason)
+	local popup = text(gui, {
+		Text = "+" .. tostring(amount) .. " SCRAP" .. (reason and ("  " .. reason) or ""), TextSize = 20, TextColor3 = YELLOW,
+		TextStrokeTransparency = 0.2, TextXAlignment = Enum.TextXAlignment.Right, AutomaticSize = Enum.AutomaticSize.None,
+		AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -12, 0.42, -64), Size = UDim2.fromOffset(360, 24), ZIndex = 15,
+	})
+	local tween = TweenService:Create(popup, TweenInfo.new(1.6, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+		Position = UDim2.new(1, -12, 0.42, -130), TextTransparency = 1, TextStrokeTransparency = 1,
+	})
+	tween.Completed:Connect(function()
+		popup:Destroy()
+	end)
+	tween:Play()
 end)
 
 ---------------------------------------------------------------------------

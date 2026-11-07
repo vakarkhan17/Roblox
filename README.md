@@ -29,9 +29,11 @@ To build a place file without Studio: `rojo build -o Signal85.rbxlx`.
 ## Controls
 | Laptop | Phone | Action |
 |---|---|---|
+| G | SUIT UP / SUIT OFF | Put the robot suit on or take it off (pilot on foot) |
 | F | TO CAR / TO ROBOT | Transform: robot ⇄ vehicle |
-| Hold Q or left mouse | Hold BLAST | Pulse Cannon (robot mode only), splash damage |
-| E | RIFT | Shift through the rift (stand next to the red ring) |
+| Hold Q or left mouse | Hold BLAST | Fire the current weapon (robot mode only); auto-aim can be turned on in Settings |
+| R | SWAP | Swap to the next weapon you own |
+| E | RIFT / tap prompt | Shift through the rift, open hotel doors, use the elevator |
 | M / K | MENU / SAVE | Pause menu / save the game |
 | H | ? | How to play |
 | - / + | - / + | Darker / brighter |
@@ -42,6 +44,9 @@ A yellow marker always points to your next target.
 - After the intro: **CONTINUE**, **NEW GAME** or **CHAPTER SELECT** (replay any chapter you reached), then a mission briefing with pictures of what to do.
 - **Chapter 1, Seal the Rift:** enter the rift east of Main Street, collect Signal Shards in the Undergrid, deliver 6 to the green console under the radio tower.
 - **Chapter 2, The Source:** destroy 3 Hive Nodes in the Undergrid, then defeat the Mind Warden by the Undergrid radio tower (shoot it while its head is open, jump over shockwaves).
+- **Chapter 3, LOWBAND:** recover the lab files, power the relays, escort the Carrier and win the race.
+- **The Grand Hotel** is used in every chapter: 5 floors, guest rooms (press E at a door), washrooms, grand stairs and elevators. It changes a little each chapter.
+- **Scrap** from creatures and missions buys weapons and upgrades at the garage or from the menu.
 - **Robot mode:** armored, can shoot. **Vehicle mode:** fast, no weapon, half shockwave damage.
 
 ## Saving

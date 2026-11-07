@@ -24,11 +24,15 @@ local BlastEvent = remotes:WaitForChild("Blast")
 local ShiftEvent = remotes:WaitForChild("Shift")
 local NotifyEvent = remotes:WaitForChild("Notify")
 local SettingsEvent = remotes:WaitForChild("Settings")
+local RadioEvent = remotes:WaitForChild("Radio")
+local HitEvent = remotes:WaitForChild("Hit")
+local SuitEvent = remotes:WaitForChild("Suit")
+local CycleWeaponEvent = remotes:WaitForChild("CycleWeapon")
 local rifts = workspace:WaitForChild("Rifts")
 
 local RIFT_RANGE = 12
 local BLAST_RANGE = 140      -- matches CONFIG.BLAST_RANGE on the server
-local BLAST_REPEAT = 0.27    -- hold-to-fire rate (server cooldown is 0.25)
+local BLAST_REPEAT = 0.27    -- hold-to-fire rate until the server sends the weapon's own (WeaponCooldown)
 local AIM_ASSIST_DEG = 12    -- touch aim locks on to a Hollower this close to the crosshair
 
 -- touch screen: show on-screen buttons. Phone: also word hints for touch instead of keys
@@ -56,6 +60,48 @@ bloom.Intensity = 0.8
 bloom.Size = 30
 bloom.Threshold = 0.9
 bloom.Parent = Lighting
+local sunRays = Instance.new("SunRaysEffect")
+sunRays.Intensity = 0.06
+sunRays.Spread = 0.8
+sunRays.Parent = Lighting
+-- 80s dusk sky (the Atmosphere colours the horizon; no image ids needed)
+local sky = Lighting:FindFirstChildOfClass("Sky") or Instance.new("Sky")
+sky.SunAngularSize = 18
+sky.MoonAngularSize = 9
+sky.StarCount = 4000
+sky.CelestialBodiesShown = true
+sky.Parent = Lighting
+
+-- GRAPHICS LOW (1) / MEDIUM (2) / HIGH (3), chosen in MENU > SETTINGS. Phones start on MEDIUM.
+local graphics = (UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled) and 2 or 3
+local PARTICLE_SCALE = { 0.25, 0.6, 1 }
+
+local function scaleEmitter(fx)
+	if fx:IsA("ParticleEmitter") then
+		if fx:GetAttribute("BaseRate") == nil then
+			fx:SetAttribute("BaseRate", fx.Rate)
+		end
+		fx.Rate = fx:GetAttribute("BaseRate") * PARTICLE_SCALE[graphics]
+	end
+end
+
+local function applyGraphics()
+	bloom.Enabled = graphics >= 2
+	bloom.Intensity = graphics == 3 and 0.9 or 0.6
+	sunRays.Enabled = graphics == 3
+	Lighting.GlobalShadows = graphics >= 2
+	for _, fx in ipairs(workspace:GetDescendants()) do
+		scaleEmitter(fx)
+	end
+end
+workspace.DescendantAdded:Connect(scaleEmitter) -- new exhaust smoke, rift particles...
+player:GetAttributeChangedSignal("GraphicsQuality"):Connect(function()
+	local q = player:GetAttribute("GraphicsQuality")
+	if q == 1 or q == 2 or q == 3 then
+		graphics = q
+		applyGraphics()
+	end
+end)
 
 local PRESETS = {
 	Town = {
@@ -130,7 +176,7 @@ end
 
 local panel = Instance.new("Frame")
 panel.Position = UDim2.fromOffset(16, 56)
-panel.Size = UDim2.fromOffset(280, 186)
+panel.Size = UDim2.fromOffset(280, 216)
 panel.BackgroundColor3 = Color3.fromRGB(10, 8, 14)
 panel.BackgroundTransparency = 0.25
 panel.BorderSizePixel = 0
@@ -150,7 +196,7 @@ end
 hudScale(panel)
 
 label(panel, { Text = "SIGNAL '85", TextSize = 26, Position = UDim2.fromOffset(12, 8), Size = UDim2.new(1, -24, 0, 28), TextColor3 = RED })
-local modeLabel = label(panel, { Text = "MODE: ROBOT", TextSize = 18, Position = UDim2.fromOffset(12, 42), Size = UDim2.new(1, -24, 0, 20) })
+local modeLabel = label(panel, { Text = "MODE: PILOT", TextSize = 18, TextScaled = true, Position = UDim2.fromOffset(12, 42), Size = UDim2.new(1, -24, 0, 20) })
 local worldLabel = label(panel, { Text = "WORLD: HOLLOW CREEK", TextSize = 18, Position = UDim2.fromOffset(12, 64), Size = UDim2.new(1, -24, 0, 20) })
 local carryLabel = label(panel, { Text = "SHARDS CARRIED: 0", TextSize = 18, Position = UDim2.fromOffset(12, 86), Size = UDim2.new(1, -24, 0, 20), TextColor3 = CYAN })
 local sealLabel = label(panel, { Text = "RIFT SEAL", TextSize = 14, Position = UDim2.fromOffset(12, 110), Size = UDim2.new(1, -24, 0, 14) })
@@ -166,6 +212,20 @@ barFill.Size = UDim2.fromScale(0, 1)
 barFill.BackgroundColor3 = Color3.fromRGB(60, 255, 140)
 barFill.BorderSizePixel = 0
 barFill.Parent = barBack
+
+-- health bar
+local healthLabel = label(panel, { Text = "HEALTH 100", TextSize = 14, Position = UDim2.fromOffset(12, 144), Size = UDim2.new(1, -24, 0, 14) })
+local healthBack = Instance.new("Frame")
+healthBack.Position = UDim2.fromOffset(12, 160)
+healthBack.Size = UDim2.new(1, -24, 0, 10)
+healthBack.BackgroundColor3 = Color3.fromRGB(40, 30, 40)
+healthBack.BorderSizePixel = 0
+healthBack.Parent = panel
+local healthFill = Instance.new("Frame")
+healthFill.Size = UDim2.fromScale(1, 1)
+healthFill.BackgroundColor3 = Color3.fromRGB(255, 90, 90)
+healthFill.BorderSizePixel = 0
+healthFill.Parent = healthBack
 
 local function button(parent, text, props)
 	local b = Instance.new("TextButton")
@@ -188,14 +248,14 @@ local function button(parent, text, props)
 end
 
 -- light setting row
-local lightLabel = label(panel, { Text = "LIGHT", TextSize = 18, Position = UDim2.fromOffset(12, 150), Size = UDim2.fromOffset(120, 26) })
-local lightDown = button(panel, "-", { Position = UDim2.fromOffset(176, 148), Size = UDim2.fromOffset(40, 30) })
-local lightUp = button(panel, "+", { Position = UDim2.fromOffset(226, 148), Size = UDim2.fromOffset(40, 30) })
+local lightLabel = label(panel, { Text = "LIGHT", TextSize = 18, Position = UDim2.fromOffset(12, 180), Size = UDim2.fromOffset(120, 26) })
+local lightDown = button(panel, "-", { Position = UDim2.fromOffset(176, 178), Size = UDim2.fromOffset(40, 30) })
+local lightUp = button(panel, "+", { Position = UDim2.fromOffset(226, 178), Size = UDim2.fromOffset(40, 30) })
 local helpButton = button(panel, "?", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 8), Size = UDim2.fromOffset(32, 28) })
 
 -- current objective, under the panel
 local objective = Instance.new("Frame")
-objective.Position = UDim2.fromOffset(16, 56 + math.floor(196 * HUD_SCALE))
+objective.Position = UDim2.fromOffset(16, 56 + math.floor(226 * HUD_SCALE))
 objective.Size = UDim2.fromOffset(280, 0)
 objective.AutomaticSize = Enum.AutomaticSize.Y
 objective.BackgroundColor3 = Color3.fromRGB(10, 8, 14)
@@ -242,7 +302,7 @@ bossBar.Parent = gui
 local bossBarMax = Instance.new("UISizeConstraint")
 bossBarMax.MaxSize = Vector2.new(520, 56)
 bossBarMax.Parent = bossBar
-label(bossBar, {
+local bossName = label(bossBar, {
 	Text = "THE MIND WARDEN", TextSize = 20, TextColor3 = RED, TextXAlignment = Enum.TextXAlignment.Center,
 	Size = UDim2.new(1, 0, 0, 20),
 })
@@ -266,8 +326,49 @@ local bossOpenLabel = label(bossBar, {
 	Position = UDim2.fromOffset(0, 40), Size = UDim2.new(1, 0, 0, 16), Visible = false,
 })
 
+-- countdown (Chapter 3 defence and race), top-center
+local timerLabel = label(gui, {
+	Text = "", TextSize = 30, TextColor3 = Color3.fromRGB(255, 220, 120), TextStrokeTransparency = 0.2,
+	TextXAlignment = Enum.TextXAlignment.Center, AnchorPoint = Vector2.new(0.5, 0),
+	Position = UDim2.new(0.5, 0, 0, SMALL_SCREEN and 104 or 122), Size = UDim2.fromOffset(400, 32), Visible = false,
+})
+
+-- walkie-talkie box (Dot and Ricky), bottom-center
+local RADIO_COLORS = { DOT = Color3.fromRGB(120, 230, 255), RICKY = Color3.fromRGB(255, 170, 40), WHCK = Color3.fromRGB(255, 60, 70) }
+local radioBox = Instance.new("Frame")
+radioBox.AnchorPoint = Vector2.new(0.5, 1)
+radioBox.Position = UDim2.new(0.5, 0, 1, SMALL_SCREEN and -16 or -48)
+radioBox.Size = UDim2.new(0.6, 0, 0, 0)
+radioBox.AutomaticSize = Enum.AutomaticSize.Y
+radioBox.BackgroundColor3 = Color3.fromRGB(10, 8, 14)
+radioBox.BackgroundTransparency = 0.15
+radioBox.BorderSizePixel = 0
+radioBox.Visible = false
+radioBox.Parent = gui
+local radioMax = Instance.new("UISizeConstraint")
+radioMax.MaxSize = Vector2.new(560, math.huge)
+radioMax.Parent = radioBox
+local radioStroke = Instance.new("UIStroke")
+radioStroke.Thickness = 2
+radioStroke.Parent = radioBox
+local radioPad = Instance.new("UIPadding")
+radioPad.PaddingTop = UDim.new(0, 8)
+radioPad.PaddingBottom = UDim.new(0, 8)
+radioPad.PaddingLeft = UDim.new(0, 12)
+radioPad.PaddingRight = UDim.new(0, 12)
+radioPad.Parent = radioBox
+local radioList = Instance.new("UIListLayout")
+radioList.Padding = UDim.new(0, 4)
+radioList.SortOrder = Enum.SortOrder.LayoutOrder
+radioList.Parent = radioBox
+local radioSpeaker = label(radioBox, { Text = "", TextSize = 16, Size = UDim2.new(1, 0, 0, 16), LayoutOrder = 1 })
+local radioText = label(radioBox, {
+	Text = "", Font = Enum.Font.Code, TextSize = SMALL_SCREEN and 14 or 17, TextWrapped = true, LayoutOrder = 2,
+	Size = UDim2.fromScale(1, 0), AutomaticSize = Enum.AutomaticSize.Y,
+})
+
 local controlsHint = label(gui, {
-	Text = "[F] TRANSFORM   [Q] BLAST (ROBOT)   [E] SHIFT AT RIFT   [H] HELP   [-][+] LIGHT",
+	Text = "[G] SUIT UP/OFF   [F] ROBOT/CAR   [Q] FIRE   [R] SWAP WEAPON   [E] RIFT   [H] HELP   [-][+] LIGHT",
 	TextScaled = true, AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 16, 1, -16), Size = UDim2.new(1, -32, 0, 20),
 })
 local hintSize = Instance.new("UITextSizeConstraint")
@@ -327,16 +428,21 @@ helpText(2, "A rift has opened to the Undergrid. Your team's job: bring back Sig
 local helpSteps = helpText(3, "")
 if IS_PHONE then
 	helpText(4, "TOUCH CONTROLS (buttons on the right)\n"
-		.. "TO CAR / TO ROBOT  Transform: robot (can shoot) <-> car (fast, no weapon)\n"
-		.. "BLAST  Hold to fire at the + in the middle of the screen (robot mode). Swipe to turn the camera; it locks on to Hollowers near the +.\n"
+		.. "SUIT UP / SUIT OFF  Pilot (you) <-> robot. Crossing the rift suits you up.\n"
+		.. "SWAP  Pulse Cannon (shoots far) <-> Shock Baton (close range, through walls)\n"
+		.. "TO CAR / TO ROBOT  Robot (can shoot) <-> car (fast, no weapon)\n"
+		.. "BLAST  Hold to fire (robot mode). AUTO-AIM shoots the nearest enemy (red ring) by itself.\n"
 		.. "RIFT  Lights up next to the red ring. Tap it to cross.\n"
 		.. "?  Show / hide this help      - / +  Darker / brighter (top-left panel)\n"
 		.. "MENU / SAVE  Buttons on the right: save, mission briefing, chapter select\n"
 		.. "Follow the yellow marker to your next target.")
 else
 	helpText(4, "CONTROLS\n"
-		.. "F  Transform: robot (can shoot) <-> car (fast, no weapon)\n"
-		.. "Q or LEFT MOUSE  Hold to fire the Pulse Cannon (robot mode, aim with the mouse)\n"
+		.. "G  Suit up / take the suit off (pilot <-> robot, in town)\n"
+		.. "R  Swap weapon: Pulse Cannon (shoots far) <-> Shock Baton (close range, through walls)\n"
+		.. "F  Robot (can shoot) <-> car (fast, no weapon)\n"
+		.. "Q  Hold to fire with AUTO-AIM: shoots the nearest enemy (red ring), no mouse needed\n"
+		.. "LEFT MOUSE  Hold to fire where you point the mouse\n"
 		.. "E  Cross the rift (stand next to the red ring)\n"
 		.. "H  Show / hide this help      - / +  Darker / brighter\n"
 		.. "M  Menu (save, mission briefing, chapter select)      K  Save\n"
@@ -352,7 +458,7 @@ end
 ---------------------------------------------------------------------------
 -- Touch controls: TRANSFORM, BLAST (hold to fire), RIFT, plus a crosshair
 ---------------------------------------------------------------------------
-local currentMode = "Robot"
+local currentMode = "Pilot" -- "Pilot" (yourself), "Robot" (suited up, can shoot) or "Vehicle"
 local nearRift = false
 
 local touchPad = Instance.new("Frame")
@@ -360,7 +466,7 @@ touchPad.Name = "TouchControls"
 touchPad.AnchorPoint = Vector2.new(1, 1)
 -- sits above Roblox's jump button (smaller and lower on phones)
 touchPad.Position = SMALL_SCREEN and UDim2.new(1, -12, 1, -105) or UDim2.new(1, -24, 1, -225)
-touchPad.Size = UDim2.fromOffset(3 * 78 + 2 * 10, 78)
+touchPad.Size = UDim2.fromOffset(5 * 78 + 4 * 10, 78)
 touchPad.BackgroundTransparency = 1
 touchPad.Visible = IS_TOUCH
 touchPad.Parent = gui
@@ -392,9 +498,11 @@ local function touchButton(order, text, color)
 	return b
 end
 
-local transformButton = touchButton(1, "TO CAR", CYAN)
-local blastButton = touchButton(2, "BLAST", RED)
-local riftButton = touchButton(3, "RIFT", AMBER)
+local suitButton = touchButton(0, "SUIT OFF", AMBER) -- only while suited up in town
+local transformButton = touchButton(1, "SUIT UP", CYAN)
+local swapButton = touchButton(2, "SWAP", Color3.fromRGB(255, 240, 120)) -- next weapon (robot mode)
+local blastButton = touchButton(3, "BLAST", RED)
+local riftButton = touchButton(4, "RIFT", AMBER)
 
 local crosshair = label(gui, {
 	Text = "+", TextSize = 40, TextColor3 = RED, TextStrokeTransparency = 0.2, TextXAlignment = Enum.TextXAlignment.Center,
@@ -402,8 +510,10 @@ local crosshair = label(gui, {
 })
 
 local function refreshTouch()
-	local robot = currentMode ~= "Vehicle"
-	transformButton.Text = robot and "TO CAR" or "TO ROBOT"
+	local robot = currentMode == "Robot"
+	transformButton.Text = (currentMode == "Pilot" and "SUIT UP") or (robot and "TO CAR") or "TO ROBOT"
+	suitButton.Visible = IS_TOUCH and currentMode ~= "Pilot" and player:GetAttribute("Dimension") ~= "Undergrid"
+	swapButton.Visible = IS_TOUCH and robot
 	blastButton.TextTransparency = robot and 0 or 0.7
 	blastButton.BackgroundTransparency = robot and 0.2 or 0.6
 	crosshair.Visible = IS_TOUCH and robot
@@ -461,7 +571,7 @@ end
 local function shake(duration, strength)
 	local char = player.Character
 	local hum = char and char:FindFirstChildOfClass("Humanoid")
-	if not hum then
+	if not hum or player:GetAttribute("CameraShake") == false then -- MENU > SETTINGS > CAMERA SHAKE
 		return
 	end
 	local t = 0
@@ -496,13 +606,17 @@ local function stage()
 	return ReplicatedStorage:GetAttribute("Stage") or "Shards"
 end
 
-local SEAL_LABELS = { Shards = "RIFT SEAL", Nodes = "HIVE NODES DESTROYED", Boss = "MIND WARDEN DAMAGE", Complete = "CHAPTER COMPLETE" }
+local SEAL_LABELS = {
+	Shards = "RIFT SEAL", Nodes = "HIVE NODES DESTROYED", Boss = "MIND WARDEN DAMAGE", Complete = "CHAPTER COMPLETE",
+	Files = "LOWBAND FILES", Relays = "RELAYS ONLINE", Carrier = "CARRIER SHUTDOWN", Race = "CODE TIMER",
+}
+local COUNTED = { Shards = true, Nodes = true, Files = true, Relays = true } -- stages that show "x/y"
 
 local function refreshSeal()
 	local progress = ReplicatedStorage:GetAttribute("Progress") or 0
 	local goal = math.max(ReplicatedStorage:GetAttribute("Goal") or 1, 1)
 	local s = stage()
-	sealLabel.Text = (SEAL_LABELS[s] or "PROGRESS") .. ((s == "Shards" or s == "Nodes") and ("  " .. progress .. "/" .. goal) or "")
+	sealLabel.Text = (SEAL_LABELS[s] or "PROGRESS") .. (COUNTED[s] and ("  " .. progress .. "/" .. goal) or "")
 	TweenService:Create(barFill, TweenInfo.new(0.4), { Size = UDim2.fromScale(math.clamp(progress / goal, 0, 1), 1) }):Play()
 end
 
@@ -516,12 +630,30 @@ local function refreshObjective()
 	local cross = IS_PHONE and "tap RIFT" or "press [E]"
 	local enter = "Go to the red rift in the field east of Main Street and " .. cross .. " to enter the Undergrid."
 
+	local labEnter = "Go to the LOWBAND lab in the woods west of town and " .. cross .. " at the small rift by its east door."
+
 	chapterLabel.Text = "CHAPTER " .. chapter .. ": " .. (ReplicatedStorage:GetAttribute("ChapterTitle") or "")
 	objectiveGoal.Text = ""
 	if s == "Complete" and chapter == 1 then
 		objectiveText.Text = "RIFT SEALED! But the signal does not stop... Chapter 2 begins soon."
+	elseif s == "Complete" and chapter == 2 then
+		objectiveText.Text = "THE MIND WARDEN IS GONE... but the radio tower hears something again. Chapter 3 begins soon."
 	elseif s == "Complete" then
-		objectiveText.Text = "THE SIGNAL IS QUIET... FOR NOW. Explore freely."
+		objectiveText.Text = "THE SIGNAL IS QUIET... FOR NOW. TO BE CONTINUED IN CHAPTER 4. Explore freely."
+	elseif s == "Files" then
+		objectiveText.Text = "Find the glowing yellow LOWBAND files in the old lab in the woods west of town (" .. progress .. "/" .. goal
+			.. "). Some are only in the lab's Undergrid copy: use the small rift by the lab's east door."
+		objectiveGoal.Text = "FILES: " .. progress .. "/" .. goal .. " FOUND"
+	elseif s == "Relays" then
+		objectiveText.Text = inUndergrid and "RESTART THE POWER RELAYS around the Undergrid lab: stand inside each glowing circle until it is full."
+			or labEnter .. " Then restart the power relays."
+		objectiveGoal.Text = "RELAYS: " .. progress .. "/" .. goal .. " ONLINE"
+	elseif s == "Carrier" then
+		objectiveText.Text = inUndergrid and "DEFEND THE CARRIER in the Undergrid lab until it shuts down. Shoot everything that comes for it!"
+			or labEnter .. " The Carrier needs you!"
+	elseif s == "Race" then
+		objectiveText.Text = inUndergrid and "RACE! Cross back through the rift, then drive to the console under the radio tower before time runs out!"
+			or "RACE! Drive to the green console under the radio tower (north end of the road) before time runs out! CAR MODE!"
 	elseif s == "Nodes" then
 		objectiveText.Text = inUndergrid and "DESTROY THE HIVE NODES IN THE UNDERGRID (" .. progress .. "/" .. goal .. "). ROBOT MODE + BLAST."
 			or enter .. " Then destroy the Hive Nodes."
@@ -552,20 +684,28 @@ local function refreshObjective()
 		.. "CHAPTER 2: THE SOURCE\n"
 		.. "5. Destroy the 3 pulsing red Hive Nodes in the Undergrid (robot mode + BLAST).\n"
 		.. "6. Defeat the Mind Warden by the Undergrid radio tower: shoot it only while its head is open, "
-		.. "jump over its red shockwaves (car mode takes half damage)."
+		.. "jump over its red shockwaves (car mode takes half damage).\n"
+		.. "CHAPTER 3: LOWBAND\n"
+		.. "7. Find 5 LOWBAND files in the lab in the woods west of town (some only in its Undergrid copy).\n"
+		.. "8. Stand in the 3 relay circles around the Undergrid lab until they are full.\n"
+		.. "9. Defend the Carrier, then race its code to the radio tower console in car mode."
 end
 
 local function worldPreset()
 	if player:GetAttribute("Dimension") ~= "Undergrid" then
 		return "Town"
 	end
-	return stage() == "Boss" and "UndergridBoss" or "Undergrid"
+	local s = stage()
+	return (s == "Boss" or s == "Carrier") and "UndergridBoss" or "Undergrid"
 end
 
 local function refreshBoss()
-	local fighting = stage() == "Boss"
+	local s = stage()
+	local fighting = (s == "Boss" or s == "Carrier") and (ReplicatedStorage:GetAttribute("BossMaxHealth") or 0) > 0
 	bossBar.Visible = fighting
 	if fighting then
+		bossName.Text = ReplicatedStorage:GetAttribute("BossName") or ""
+		bossFill.BackgroundColor3 = s == "Carrier" and Color3.fromRGB(255, 120, 200) or RED
 		local hp = ReplicatedStorage:GetAttribute("BossHealth") or 0
 		local maxHp = math.max(ReplicatedStorage:GetAttribute("BossMaxHealth") or 1, 1)
 		TweenService:Create(bossFill, TweenInfo.new(0.2), { Size = UDim2.fromScale(math.clamp(hp / maxHp, 0, 1), 1) }):Play()
@@ -657,15 +797,30 @@ ReplicatedStorage:GetAttributeChangedSignal("Stage"):Connect(function()
 		applyPreset(worldPreset(), 2)
 	end
 end)
-for _, name in ipairs({ "BossHealth", "BossMaxHealth", "BossOpen" }) do
+for _, name in ipairs({ "BossHealth", "BossMaxHealth", "BossOpen", "BossName" }) do
 	ReplicatedStorage:GetAttributeChangedSignal(name):Connect(refreshBoss)
 end
 
+-- countdown for the Chapter 3 defence and race
+RunService.Heartbeat:Connect(function()
+	local deadline = ReplicatedStorage:GetAttribute("Deadline") or 0
+	local s = stage()
+	if deadline <= 0 or (s ~= "Carrier" and s ~= "Race") then
+		timerLabel.Visible = false
+		return
+	end
+	local left = math.max(math.ceil(deadline - workspace:GetServerTimeNow()), 0)
+	local clock = string.format("%d:%02d", left // 60, left % 60)
+	timerLabel.Text = (s == "Race" and "CODE EXPIRES IN " or "SHUTDOWN IN ") .. clock
+	timerLabel.TextColor3 = left <= 10 and RED or Color3.fromRGB(255, 220, 120)
+	timerLabel.Visible = true
+end)
+
 local function hookCharacter(char)
 	local function refreshMode()
-		local mode = char:GetAttribute("Mode") or "Robot"
-		modeLabel.Text = "MODE: " .. string.upper(mode)
-		modeLabel.TextColor3 = mode == "Vehicle" and CYAN or AMBER
+		local mode = char:GetAttribute("Mode") or "Pilot"
+		modeLabel.Text = mode == "Robot" and ("ROBOT: " .. (player:GetAttribute("WeaponName") or "PULSE CANNON")) or ("MODE: " .. string.upper(mode))
+		modeLabel.TextColor3 = (mode == "Vehicle" and CYAN) or (mode == "Pilot" and Color3.fromRGB(255, 170, 200)) or AMBER
 		currentMode = mode
 		refreshTouch()
 	end
@@ -676,6 +831,12 @@ player.CharacterAdded:Connect(hookCharacter)
 if player.Character then
 	hookCharacter(player.Character)
 end
+-- R / SWAP changes the weapon: show its name while suited up
+player:GetAttributeChangedSignal("WeaponName"):Connect(function()
+	if currentMode == "Robot" then
+		modeLabel.Text = "ROBOT: " .. (player:GetAttribute("WeaponName") or "PULSE CANNON")
+	end
+end)
 
 TransformEvent.OnClientEvent:Connect(function(char, mode)
 	if char == player.Character then
@@ -686,6 +847,148 @@ end)
 
 NotifyEvent.OnClientEvent:Connect(function(text, color)
 	showBanner(text, color)
+end)
+
+-- walkie-talkie lines, one at a time, typed out
+local radioQueue = {}
+local radioBusy = false
+local function playRadio()
+	if radioBusy then
+		return
+	end
+	radioBusy = true
+	while #radioQueue > 0 do
+		local msg = table.remove(radioQueue, 1)
+		local color = RADIO_COLORS[msg.speaker] or AMBER
+		radioSpeaker.Text = msg.speaker == "WHCK" and "WHCK 85.5 FM - LIVE" or ("RADIO CH 4 - " .. msg.speaker)
+		radioSpeaker.TextColor3 = color
+		radioStroke.Color = color
+		radioText.Text = msg.text
+		radioText.MaxVisibleGraphemes = 0
+		radioBox.Visible = true
+		local total = utf8.len(msg.text) or #msg.text
+		local start = os.clock()
+		while true do
+			local shown = math.min(math.floor((os.clock() - start) / 0.025), total)
+			radioText.MaxVisibleGraphemes = shown
+			if shown >= total then
+				break
+			end
+			task.wait()
+		end
+		task.wait(math.clamp(total * 0.04, 3, 7))
+	end
+	radioBox.Visible = false
+	radioBusy = false
+end
+RadioEvent.OnClientEvent:Connect(function(speaker, text)
+	table.insert(radioQueue, { speaker = tostring(speaker), text = tostring(text) })
+	task.spawn(playRadio)
+end)
+
+---------------------------------------------------------------------------
+-- Hit feedback: floating damage numbers and a hit marker for your own hits
+---------------------------------------------------------------------------
+local hitMarker = label(gui, {
+	Text = "X", TextSize = 30, TextColor3 = Color3.new(1, 1, 1), TextStrokeTransparency = 0.2, TextXAlignment = Enum.TextXAlignment.Center,
+	AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(40, 40), Visible = false, ZIndex = 9,
+})
+local hitToken = 0
+
+HitEvent.OnClientEvent:Connect(function(position, amount, killed)
+	if typeof(position) ~= "Vector3" then
+		return
+	end
+	-- number floating up from the hit
+	local anchor = Instance.new("Part")
+	anchor.Anchored = true
+	anchor.CanCollide = false
+	anchor.CanQuery = false
+	anchor.CanTouch = false
+	anchor.Transparency = 1
+	anchor.Size = Vector3.one * 0.2
+	anchor.Position = position + Vector3.new(math.random() * 2 - 1, 1, math.random() * 2 - 1)
+	anchor.Parent = workspace
+	local board = Instance.new("BillboardGui")
+	board.Size = UDim2.fromOffset(90, 34)
+	board.AlwaysOnTop = true
+	board.Adornee = anchor
+	board.Parent = anchor
+	local number = label(board, {
+		Text = tostring(amount), TextSize = killed and 30 or 22, TextColor3 = killed and RED or Color3.fromRGB(255, 235, 140),
+		TextStrokeTransparency = 0.1, TextXAlignment = Enum.TextXAlignment.Center, Size = UDim2.fromScale(1, 1),
+	})
+	TweenService:Create(anchor, TweenInfo.new(0.8, Enum.EasingStyle.Quad), { Position = anchor.Position + Vector3.new(0, 4, 0) }):Play()
+	TweenService:Create(number, TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()
+	game:GetService("Debris"):AddItem(anchor, 0.9)
+
+	-- hit marker where you aimed: the + on touch, the mouse on a laptop
+	hitToken = hitToken + 1
+	local token = hitToken
+	local at = IS_TOUCH and (workspace.CurrentCamera.ViewportSize / 2) or UserInputService:GetMouseLocation()
+	hitMarker.Position = UDim2.fromOffset(at.X, at.Y)
+	hitMarker.TextColor3 = killed and RED or Color3.new(1, 1, 1)
+	hitMarker.TextSize = killed and 40 or 28
+	hitMarker.Visible = true
+	task.delay(0.12, function()
+		if token == hitToken then
+			hitMarker.Visible = false
+		end
+	end)
+end)
+
+---------------------------------------------------------------------------
+-- Health: HUD bar and a pulsing red screen edge below 35%
+---------------------------------------------------------------------------
+local lowHealth = Instance.new("Frame")
+lowHealth.Size = UDim2.fromScale(1, 1)
+lowHealth.BackgroundColor3 = Color3.fromRGB(200, 0, 20)
+lowHealth.BorderSizePixel = 0
+lowHealth.Visible = false
+lowHealth.ZIndex = 0
+lowHealth.Parent = gui
+local lowHealthGradient = Instance.new("UIGradient") -- clear middle, red edges
+lowHealthGradient.Transparency = NumberSequence.new({
+	NumberSequenceKeypoint.new(0, 0.3), NumberSequenceKeypoint.new(0.18, 1), NumberSequenceKeypoint.new(0.82, 1), NumberSequenceKeypoint.new(1, 0.3),
+})
+lowHealthGradient.Parent = lowHealth
+
+RunService.Heartbeat:Connect(function()
+	local char = player.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	if not hum then
+		lowHealth.Visible = false
+		return
+	end
+	local ratio = math.clamp(hum.Health / math.max(hum.MaxHealth, 1), 0, 1)
+	healthLabel.Text = "HEALTH " .. math.ceil(hum.Health) .. " / " .. math.floor(hum.MaxHealth)
+	healthFill.Size = UDim2.fromScale(ratio, 1)
+	healthFill.BackgroundColor3 = ratio < 0.35 and RED or Color3.fromRGB(255, 90, 90):Lerp(Color3.fromRGB(60, 255, 140), ratio)
+	local low = ratio < 0.35 and hum.Health > 0
+	lowHealth.Visible = low
+	if low then
+		lowHealth.BackgroundTransparency = 0.55 + math.sin(os.clock() * 6) * 0.2
+	end
+end)
+
+---------------------------------------------------------------------------
+-- Undergrid lightning: red flashes in the sky now and then
+---------------------------------------------------------------------------
+local lightningFx = Instance.new("ColorCorrectionEffect")
+lightningFx.Parent = Lighting
+task.spawn(function()
+	while true do
+		task.wait(math.random(6, 14))
+		if player:GetAttribute("Dimension") == "Undergrid" and graphics >= 2 then
+			for _ = 1, math.random(1, 2) do
+				lightningFx.Brightness = 0.35
+				lightningFx.TintColor = Color3.fromRGB(255, 150, 150)
+				task.wait(0.06)
+				TweenService:Create(lightningFx, TweenInfo.new(0.35), { Brightness = 0, TintColor = Color3.new(1, 1, 1) }):Play()
+				task.wait(0.15)
+			end
+		end
+	end
 end)
 
 ---------------------------------------------------------------------------
@@ -729,8 +1032,56 @@ local function crosshairAim()
 	return result and result.Position or camPos + look * 400
 end
 
-local function aimPoint(fromTouch)
-	if fromTouch or (UserInputService.TouchEnabled and not UserInputService.MouseEnabled) then
+-- AUTO-AIM (MENU > SETTINGS, on by default): Q, gamepad and the touch BLAST button fire at
+-- the nearest enemy by themselves, no mouse needed. Enemies in front of the camera count as
+-- closer; the Mind Warden only while its head is open. The red ring shows the target.
+local function autoAimOn()
+	return player:GetAttribute("AutoAim") ~= false
+end
+
+local function autoTarget()
+	local char = player.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if not hrp then
+		return nil
+	end
+	local look = workspace.CurrentCamera.CFrame.LookVector
+	local flatLook = Vector3.new(look.X, 0, look.Z)
+	flatLook = flatLook.Magnitude > 0.01 and flatLook.Unit or Vector3.new(0, 0, -1)
+	local best, bestScore = nil, math.huge
+	for _, folderName in ipairs(AIM_FOLDERS) do
+		local folder = workspace:FindFirstChild(folderName)
+		if folderName == "Boss" and not ReplicatedStorage:GetAttribute("BossOpen") then
+			folder = nil -- shooting its closed head does nothing
+		end
+		for _, m in ipairs(folder and folder:GetChildren() or {}) do
+			local p = m:IsA("Model") and (m:FindFirstChild("WeakPoint") or m.PrimaryPart)
+			if p and (m:GetAttribute("Health") or 1) > 0 then
+				local to = p.Position - hrp.Position
+				local dist = to.Magnitude
+				if dist <= BLAST_RANGE then
+					local flat = Vector3.new(to.X, 0, to.Z)
+					local front = flat.Magnitude > 0.1 and flat.Unit:Dot(flatLook) or 1
+					local score = dist * (1.6 - front * 0.6)
+					if score < bestScore then
+						best, bestScore = p, score
+					end
+				end
+			end
+		end
+	end
+	return best
+end
+
+-- auto: fired with Q / gamepad / touch (auto-aim applies); fromTouch: aim at the + when there is no target
+local function aimPoint(fromTouch, auto)
+	if auto and autoAimOn() then
+		local target = autoTarget()
+		if target then
+			return target.Position
+		end
+	end
+	if fromTouch or auto or (UserInputService.TouchEnabled and not UserInputService.MouseEnabled) then
 		return crosshairAim()
 	end
 	return mouse.Hit.Position
@@ -743,16 +1094,18 @@ end
 
 -- hold to keep firing: Q / gamepad R2, the left mouse button, or the touch BLAST button
 local fireSource = nil -- whatever is holding the trigger right now
-local function startFiring(source, fromTouch)
+local function startFiring(source, fromTouch, auto)
 	if fireSource then
 		return
 	end
 	fireSource = source
 	while fireSource == source do
-		if canAct() and currentMode ~= "Vehicle" then
-			BlastEvent:FireServer(aimPoint(fromTouch))
+		if canAct() and currentMode == "Robot" then
+			BlastEvent:FireServer(aimPoint(fromTouch, auto))
 		end
-		task.wait(BLAST_REPEAT)
+		-- the equipped weapon's fire rate (set by the server), plus a little slack
+		local cooldown = player:GetAttribute("WeaponCooldown")
+		task.wait(typeof(cooldown) == "number" and cooldown + 0.02 or BLAST_REPEAT)
 	end
 end
 local function stopFiring(source)
@@ -765,7 +1118,7 @@ local function onAction(actionName, inputState)
 	if actionName == "S85_Blast" then
 		if inputState == Enum.UserInputState.Begin then
 			if canAct() then
-				task.spawn(startFiring, "key", false)
+				task.spawn(startFiring, "key", false, true) -- Q / gamepad: auto-aim
 			end
 		else
 			stopFiring("key")
@@ -780,6 +1133,10 @@ local function onAction(actionName, inputState)
 	end
 	if actionName == "S85_Transform" then
 		TransformEvent:FireServer()
+	elseif actionName == "S85_Suit" then
+		SuitEvent:FireServer()
+	elseif actionName == "S85_Swap" then
+		CycleWeaponEvent:FireServer()
 	elseif actionName == "S85_Shift" then
 		ShiftEvent:FireServer()
 	elseif actionName == "S85_Help" then
@@ -794,6 +1151,8 @@ end
 
 -- keyboard / gamepad only: touch screens use the HUD's own buttons below
 ContextActionService:BindAction("S85_Transform", onAction, false, Enum.KeyCode.F, Enum.KeyCode.ButtonY)
+ContextActionService:BindAction("S85_Suit", onAction, false, Enum.KeyCode.G, Enum.KeyCode.ButtonB)
+ContextActionService:BindAction("S85_Swap", onAction, false, Enum.KeyCode.R, Enum.KeyCode.ButtonL1)
 ContextActionService:BindAction("S85_Blast", onAction, false, Enum.KeyCode.Q, Enum.KeyCode.ButtonR2)
 ContextActionService:BindAction("S85_Shift", onAction, false, Enum.KeyCode.E, Enum.KeyCode.ButtonX)
 ContextActionService:BindAction("S85_Help", onAction, false, Enum.KeyCode.H, Enum.KeyCode.ButtonSelect)
@@ -803,6 +1162,16 @@ ContextActionService:BindAction("S85_LightDown", onAction, false, Enum.KeyCode.M
 transformButton.Activated:Connect(function()
 	if canAct() then
 		TransformEvent:FireServer()
+	end
+end)
+suitButton.Activated:Connect(function()
+	if canAct() then
+		SuitEvent:FireServer()
+	end
+end)
+swapButton.Activated:Connect(function()
+	if canAct() then
+		CycleWeaponEvent:FireServer()
 	end
 end)
 riftButton.Activated:Connect(function()
@@ -817,7 +1186,7 @@ end
 -- touch BLAST button: hold to fire at the crosshair
 blastButton.InputBegan:Connect(function(input)
 	if isPress(input) and canAct() then
-		startFiring(input, true)
+		startFiring(input, true, true) -- touch: auto-aim, else the + in the middle
 	end
 end)
 -- laptop: hold the left mouse button to fire at the mouse (clicks on buttons don't count)
@@ -835,6 +1204,34 @@ UserInputService.InputEnded:Connect(function(input)
 		and (input == fireSource or input.UserInputType == Enum.UserInputType.MouseButton1) then
 		stopFiring(fireSource)
 	end
+end)
+
+-- auto-aim ring: a red circle on the enemy your next shot will hit
+local targetRing = Instance.new("Frame")
+targetRing.AnchorPoint = Vector2.new(0.5, 0.5)
+targetRing.Size = UDim2.fromOffset(52, 52)
+targetRing.BackgroundTransparency = 1
+targetRing.Visible = false
+targetRing.Parent = gui
+local ringCorner = Instance.new("UICorner")
+ringCorner.CornerRadius = UDim.new(0.5, 0)
+ringCorner.Parent = targetRing
+local ringStroke = Instance.new("UIStroke")
+ringStroke.Color = RED
+ringStroke.Thickness = 3
+ringStroke.Parent = targetRing
+
+RunService.RenderStepped:Connect(function()
+	local target = gui.Enabled and currentMode == "Robot" and autoAimOn() and autoTarget()
+	if not target then
+		targetRing.Visible = false
+		return
+	end
+	local point, onScreen = workspace.CurrentCamera:WorldToViewportPoint(target.Position)
+	local pulse = 52 + math.sin(os.clock() * 8) * 6
+	targetRing.Visible = onScreen and point.Z > 0
+	targetRing.Position = UDim2.fromOffset(point.X, point.Y)
+	targetRing.Size = UDim2.fromOffset(pulse, pulse)
 end)
 
 ---------------------------------------------------------------------------
@@ -872,6 +1269,7 @@ refreshObjective()
 refreshBoss()
 refreshLight()
 refreshTouch()
+applyGraphics()
 -- (HOW TO PLAY no longer opens by itself: StartMenu shows the picture briefing instead)
 
 ---------------------------------------------------------------------------
@@ -930,23 +1328,71 @@ local function nearestIn(folderName, from, usePart)
 end
 
 -- the next thing to go to, following the same logic as the objective box
+-- the rift to use from this side: the lab rift in Chapter 3, the field rift otherwise
+local function riftOn(side)
+	local preferLab = (ReplicatedStorage:GetAttribute("Chapter") or 1) == 3
+	local rift = rifts:FindFirstChild((preferLab and "Lab" or "") .. side .. "Rift") or rifts:FindFirstChild(side .. "Rift")
+	return rift and rift.PrimaryPart
+end
+
+-- nearest Chapter 3 file on this side of the rift
+local function nearestFile(from, side)
+	local folder = workspace:FindFirstChild("LowbandFiles")
+	local best, bestDist = nil, math.huge
+	for _, file in ipairs(folder and folder:GetChildren() or {}) do
+		if file:GetAttribute("Dimension") == side then
+			local d = (file.Position - from).Magnitude
+			if d < bestDist then
+				best, bestDist = file, d
+			end
+		end
+	end
+	return best
+end
+
+local function nearestRelay(from)
+	local folder = workspace:FindFirstChild("Relays")
+	local best, bestDist = nil, math.huge
+	for _, relay in ipairs(folder and folder:GetChildren() or {}) do
+		if not relay:GetAttribute("Done") and relay.PrimaryPart then
+			local d = (relay.PrimaryPart.Position - from).Magnitude
+			if d < bestDist then
+				best, bestDist = relay.PrimaryPart, d
+			end
+		end
+	end
+	return best
+end
+
 local function currentTarget(from)
 	local s = stage()
 	local inUndergrid = player:GetAttribute("Dimension") == "Undergrid"
+	local side = inUndergrid and "Undergrid" or "Town"
 	local carrying = player:GetAttribute("Carrying") or 0
-	local townRift = rifts:FindFirstChild("TownRift")
-	local ugRift = rifts:FindFirstChild("UndergridRift")
 	if s == "Complete" then
 		return nil
 	end
 	if s == "Shards" and carrying > 0 then
 		if inUndergrid then
-			return ugRift and ugRift.PrimaryPart, "RIFT - GO HOME"
+			return riftOn("Undergrid"), "RIFT - GO HOME"
 		end
 		return findConsole(), "CONSOLE - DELIVER"
 	end
+	if s == "Files" then
+		local file = nearestFile(from, side)
+		if file then
+			return file, "LOWBAND FILE"
+		end
+		return riftOn(side), "RIFT - MORE FILES ON THE OTHER SIDE"
+	end
+	if s == "Race" then
+		if inUndergrid then
+			return riftOn("Undergrid"), "RIFT - GO HOME"
+		end
+		return findConsole(), "CONSOLE - BROADCAST"
+	end
 	if not inUndergrid then
-		return townRift and townRift.PrimaryPart, "RIFT"
+		return riftOn("Town"), "RIFT"
 	end
 	if s == "Shards" then
 		return nearestIn("SignalShards", from), "SHARD"
@@ -954,6 +1400,10 @@ local function currentTarget(from)
 		return nearestIn("HiveNodes", from), "HIVE NODE"
 	elseif s == "Boss" then
 		return nearestIn("Boss", from, "WeakPoint"), "MIND WARDEN"
+	elseif s == "Relays" then
+		return nearestRelay(from), "POWER RELAY"
+	elseif s == "Carrier" then
+		return nearestIn("Carrier", from), "THE CARRIER"
 	end
 	return nil
 end
@@ -974,7 +1424,11 @@ RunService.RenderStepped:Connect(function()
 	local size = cam.ViewportSize
 	local point, onScreen = cam:WorldToViewportPoint(target.Position)
 	local distance = math.floor((target.Position - hrp.Position).Magnitude)
-	markerText.Text = name .. "  " .. distance .. "m"
+	-- in the Grand Hotel: say how many floors up or down
+	local floors = math.floor((target.Position.Y - hrp.Position.Y) / (workspace:GetAttribute("HotelFloorHeight") or 14) + 0.5)
+	local floorHint = floors > 0 and ("  " .. floors .. (floors == 1 and " FLOOR UP" or " FLOORS UP"))
+		or floors < 0 and ("  " .. -floors .. (floors == -1 and " FLOOR DOWN" or " FLOORS DOWN")) or ""
+	markerText.Text = name .. "  " .. distance .. "m" .. floorHint
 	marker.Visible = true
 
 	if onScreen and point.Z > 0 then
@@ -998,5 +1452,132 @@ RunService.RenderStepped:Connect(function()
 		arrow.Visible = true
 		arrow.Rotation = math.deg(math.atan2(dir.Y, dir.X)) + 90
 		marker.Position = UDim2.fromOffset(pos.X, pos.Y + 16)
+	end
+end)
+
+---------------------------------------------------------------------------
+-- Grand Hotel: FLOOR label, a shoulder flashlight indoors, flickering
+-- washroom lights, and a mirror scare on floor 3 (Undergrid, Chapter 1)
+---------------------------------------------------------------------------
+local flashlight = Instance.new("SpotLight")
+flashlight.Name = "PilotFlashlight"
+flashlight.Range = 45
+flashlight.Angle = 55
+flashlight.Brightness = 2.2
+flashlight.Color = Color3.fromRGB(255, 245, 225)
+flashlight.Shadows = true
+flashlight.Enabled = false
+
+-- which hotel floor you are on (nil = outside)
+local function hotelFloor(position)
+	local center = workspace:GetAttribute("HotelCenter")
+	local floorHeight = workspace:GetAttribute("HotelFloorHeight") or 14
+	if not center then
+		return nil
+	end
+	if player:GetAttribute("Dimension") == "Undergrid" then
+		center = center + (workspace:GetAttribute("UndergridOffset") or Vector3.zero)
+	end
+	local rel = position - center
+	local half = workspace:GetAttribute("HotelHalfSize") or Vector2.new(48, 36)
+	if math.abs(rel.X) > half.X or math.abs(rel.Z) > half.Y or rel.Y < -2 or rel.Y > floorHeight * 6 + 2 then
+		return nil
+	end
+	return math.clamp(math.floor(rel.Y / floorHeight) + 1, 1, 6)
+end
+
+local scared = false
+local function mirrorScare()
+	scared = true
+	local spot = workspace:GetAttribute("HotelScare")
+	if not spot then
+		return
+	end
+	-- a shadow figure "in" the mirror for a moment, then gone
+	local ghost = Instance.new("Model")
+	local function add(size, offset, color, shape)
+		local p = Instance.new("Part")
+		p.Anchored = true
+		p.CanCollide = false
+		p.CanQuery = false
+		p.Size = size
+		p.Shape = shape or Enum.PartType.Block
+		p.Color = color
+		p.Material = Enum.Material.SmoothPlastic
+		p.Transparency = 0.15
+		p.CFrame = CFrame.new(spot + offset)
+		p.Parent = ghost
+	end
+	add(Vector3.new(0.5, 5, 2.4), Vector3.new(-1, -2.5, 0), Color3.fromRGB(28, 22, 26))
+	add(Vector3.new(2.6, 2.6, 2.6), Vector3.new(-1, 0.8, 0), Color3.fromRGB(28, 22, 26), Enum.PartType.Ball)
+	add(Vector3.new(0.3, 1.2, 1.2), Vector3.new(-0.2, 0.8, 0), Color3.fromRGB(255, 40, 50), Enum.PartType.Ball)
+	ghost.Parent = workspace
+	screenFlash(RED)
+	shake(0.4, 0.6)
+	task.delay(0.7, function()
+		ghost:Destroy()
+	end)
+end
+
+local lastFloor = nil
+RunService.Heartbeat:Connect(function()
+	local char = player.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	local head = char and char:FindFirstChild("Head")
+	if not hrp then
+		return
+	end
+	local floor = hotelFloor(hrp.Position)
+
+	-- the panel's WORLD line shows the hotel floor
+	if floor ~= lastFloor then
+		lastFloor = floor
+		if floor then
+			worldLabel.Text = (floor == 6 and "GRAND HOTEL - ROOF") or ("GRAND HOTEL - FLOOR " .. floor)
+		else
+			refreshWorld()
+		end
+	end
+
+	-- flashlight on your shoulder while inside
+	if head and flashlight.Parent ~= head then
+		flashlight.Parent = head
+	end
+	flashlight.Enabled = floor ~= nil and floor < 6
+
+	-- floor 3 washroom mirror, Undergrid side, Chapter 1 only, once
+	local spot = workspace:GetAttribute("HotelScare")
+	if not scared and spot and floor == 3 and player:GetAttribute("Dimension") == "Undergrid"
+		and (ReplicatedStorage:GetAttribute("Chapter") or 1) == 1 and (hrp.Position - spot).Magnitude < 9 then
+		mirrorScare()
+	end
+end)
+
+-- washroom lights flicker now and then (only while the hotel has power)
+task.spawn(function()
+	local flickers, lastScan = {}, -math.huge
+	while true do
+		task.wait(0.15)
+		if os.clock() - lastScan > 10 then -- find the washroom lights again now and then (cheap enough)
+			lastScan = os.clock()
+			flickers = {}
+			for _, d in ipairs(workspace:GetDescendants()) do
+				if d.Name == "HotelFlicker" and d:IsA("BasePart") then
+					table.insert(flickers, d)
+				end
+			end
+		end
+		if graphics >= 2 then
+			for _, p in ipairs(flickers) do
+				if p.Parent and p.Material == Enum.Material.Neon then
+					local l = p:FindFirstChildOfClass("PointLight")
+					local off = math.random() < 0.08
+					p.Transparency = off and 0.8 or 0
+					if l then
+						l.Brightness = off and 0.1 or 1
+					end
+				end
+			end
+		end
 	end
 end)
