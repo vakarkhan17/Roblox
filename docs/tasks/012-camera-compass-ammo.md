@@ -2,7 +2,7 @@
 
 Status: DONE
 
-From the user's feedback on 2026-11-09. Points 1–3 were approved and built. Point 4 (firepower) is waiting for approval of the final design.
+From the user's feedback on 2026-11-09. Points 1–3 were approved first. Point 4 (firepower) was approved after the user's changes and built too.
 
 ## 1. Camera (built)
 - Inside the Grand Hotel, walls between the camera and the player turn see-through (Invisicam) instead of pushing the camera in, and max zoom is 16 studs. Outside, it goes back to normal.

@@ -408,6 +408,36 @@ local PICTURES = {
 		part(m, { Shape = Enum.PartType.Ball, Size = Vector3.one * 0.9, Color = purple, Material = Enum.Material.Neon, CFrame = CFrame.new(1.5, -1, -4) })
 		return m
 	end,
+	-- Chapter 5
+	minirift = function()
+		local m = Instance.new("Model")
+		part(m, { Shape = Enum.PartType.Cylinder, Size = Vector3.new(0.6, 11, 11), Color = RED, Material = Enum.Material.Neon,
+			CFrame = CFrame.new(0, 6.5, 0) * CFrame.Angles(0, math.rad(90), 0) })
+		part(m, { Shape = Enum.PartType.Cylinder, Size = Vector3.new(0.2, 18, 18), Color = RED, Material = Enum.Material.Neon, Transparency = 0.6,
+			CFrame = CFrame.Angles(0, 0, math.rad(90)) })
+		part(m, { Size = Vector3.new(2, 3, 1.2), Color = Color3.fromRGB(70, 92, 125), Material = Enum.Material.DiamondPlate, CFrame = CFrame.new(3, 1.5, 3) })
+		return m
+	end,
+	van = function()
+		local m = Instance.new("Model")
+		local blue = Color3.fromRGB(70, 140, 255)
+		part(m, { Size = Vector3.new(6, 5, 12), Color = Color3.fromRGB(235, 225, 200), Material = Enum.Material.SmoothPlastic, CFrame = CFrame.new(0, 3.6, 0) })
+		part(m, { Size = Vector3.new(6.05, 0.8, 12.05), Color = blue, Material = Enum.Material.SmoothPlastic, CFrame = CFrame.new(0, 3.2, 0) })
+		part(m, { Size = Vector3.new(0.4, 6, 0.4), Color = Color3.fromRGB(150, 150, 160), Material = Enum.Material.Metal, CFrame = CFrame.new(0, 9, 3) })
+		part(m, { Shape = Enum.PartType.Cylinder, Size = Vector3.new(0.4, 4, 4), Color = Color3.fromRGB(200, 200, 210), Material = Enum.Material.Metal,
+			CFrame = CFrame.new(0, 12, 3) * CFrame.Angles(0, 0, math.rad(60)) })
+		part(m, { Shape = Enum.PartType.Ball, Size = Vector3.one * 1.2, Color = blue, Material = Enum.Material.Neon, CFrame = CFrame.new(0, 12.6, 3) })
+		return m
+	end,
+	tapes = function()
+		local m = Instance.new("Model")
+		part(m, { Size = Vector3.new(2.4, 1.4, 1.6), Color = Color3.fromRGB(255, 170, 40), Material = Enum.Material.Neon, CFrame = CFrame.Angles(0.3, 0.4, 0) })
+		for _, x in ipairs({ -0.6, 0.6 }) do
+			part(m, { Shape = Enum.PartType.Cylinder, Size = Vector3.new(0.2, 0.9, 0.9), Color = Color3.fromRGB(40, 40, 46), Material = Enum.Material.Metal,
+				CFrame = CFrame.Angles(0.3, 0.4, 0) * CFrame.new(x, 0, -0.85) * CFrame.Angles(0, math.rad(90), 0) })
+		end
+		return m
+	end,
 	marker = function()
 		local m = Instance.new("Model")
 		part(m, { Size = Vector3.new(3, 3, 0.4), Color = YELLOW, Material = Enum.Material.Neon, CFrame = CFrame.Angles(0, 0, math.rad(45)) })
@@ -500,11 +530,21 @@ local BRIEFINGS = {
 			{ "echo", "WATCH OUT", RED, "ECHOES copy Shiftframes and SHOOT BACK. Their purple bolts are slow: move sideways and use walls as cover." },
 		},
 	},
+	[5] = {
+		goal = "The Undergrid is leaking into Hollow Creek. Close the rifts, protect the broadcast, deliver the tapes.",
+		cards = {
+			{ "minirift", "1. CLOSE x5", RED, "Red MINI-RIFTS open all over town. Stand inside the red circle until it closes. Things come out of them!" },
+			{ "van", "2. DEFEND", Color3.fromRGB(70, 140, 255), "The WHCK 85.5 VAN on Main Street broadcasts a calming signal. Keep everything away from it until it's done." },
+			{ "tapes", "3. RACE", Color3.fromRGB(255, 170, 40), "Grab the SIGNAL TAPES by the radio tower console and drive them to the GRAND HOTEL entrance in car mode. Hurry!" },
+			{ "hound", "WATCH OUT", RED, "This time HOLLOWERS and STATIC HOUNDS are IN TOWN. There is no safe side of the rift tonight." },
+		},
+	},
 }
 
 local function stageName(stage)
 	return ({ Shards = "Collecting shards", Nodes = "Hive Nodes", Boss = "Mind Warden", Files = "LOWBAND files", Relays = "Power relays", Carrier = "Defend the Carrier", Complete = "Complete",
-		Keycards = "Keycards", Pylons = "Echo Pylons", Tape = "The tape" })[stage] or tostring(stage)
+		Keycards = "Keycards", Pylons = "Echo Pylons", Tape = "The tape",
+		Rifts = "Mini-rifts", Van = "Defend the van", TapeRace = "Tape race" })[stage] or tostring(stage)
 end
 
 local function timeAgo(seconds)

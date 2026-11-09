@@ -121,6 +121,12 @@ local PRESETS = {
 		atmosphere = { Density = 0.6, Haze = 3, Glare = 0, Color = Color3.fromRGB(110, 40, 50), Decay = Color3.fromRGB(40, 10, 16) },
 		grade = { TintColor = Color3.fromRGB(255, 175, 175), Saturation = -0.3, Contrast = 0.3, Brightness = -0.05 },
 	},
+	-- Chapter 5: the Undergrid leaks into Hollow Creek (red static storm over the town)
+	Storm = {
+		lighting = { ClockTime = 20.5, Brightness = 1.2, Ambient = Color3.fromRGB(100, 50, 60), OutdoorAmbient = Color3.fromRGB(120, 60, 70) },
+		atmosphere = { Density = 0.45, Haze = 2.5, Glare = 0, Color = Color3.fromRGB(200, 70, 80), Decay = Color3.fromRGB(80, 20, 30) },
+		grade = { TintColor = Color3.fromRGB(255, 200, 200), Saturation = -0.1, Contrast = 0.2, Brightness = -0.02 },
+	},
 }
 
 -- player light setting (- / + keys or HUD buttons), applied on top of the presets
@@ -698,8 +704,20 @@ local function refreshObjective()
 		objectiveText.Text = "THE CARRIER IS SILENT... but one pulse came from far below. Chapter 4 begins soon."
 	elseif s == "Complete" and chapter == 4 then
 		objectiveText.Text = "Every radio in Hollow Creek switched on by itself. The Listener knows. TO BE CONTINUED IN CHAPTER 5."
+	elseif s == "Complete" and chapter == 5 then
+		objectiveText.Text = "The storm is over... but RICKY was pulled into a huge rift. TO BE CONTINUED IN CHAPTER 6."
 	elseif s == "Complete" then
 		objectiveText.Text = "THE SIGNAL IS QUIET... FOR NOW. Explore freely."
+	elseif s == "Rifts" then
+		objectiveText.Text = inUndergrid and "The storm is in HOLLOW CREEK. Go back through the rift!"
+			or "Close the red MINI-RIFTS in town: stand inside each red circle until it closes. More pilots = faster. Things come out of them!"
+		objectiveGoal.Text = "MINI-RIFTS: " .. progress .. "/" .. goal .. " CLOSED"
+	elseif s == "Van" then
+		objectiveText.Text = inUndergrid and "The WHCK van needs you in HOLLOW CREEK. Go back through the rift!"
+			or "DEFEND THE WHCK 85.5 VAN on Main Street until the broadcast ends. Shoot everything that goes for it!"
+	elseif s == "TapeRace" then
+		objectiveText.Text = player:GetAttribute("CarryingTape") and "YOU HAVE THE TAPES! Drive to the GRAND HOTEL entrance (blue ring) before time runs out. CAR MODE!"
+			or "Grab the orange SIGNAL TAPES by the radio tower console and drive them to the GRAND HOTEL entrance (blue ring)."
 	elseif s == "Keycards" then
 		objectiveText.Text = "Find the 4 green KEYCARDS: 2 in the Grand Hotel here (room 302, the roof), 2 in its Undergrid copy "
 			.. "(room 209, behind reception). Open room doors with " .. (IS_PHONE and "the prompt" or "[E]") .. "."
@@ -762,12 +780,15 @@ local function refreshObjective()
 		.. "9. Defend the Carrier, then race its code to the radio tower console in car mode.\n"
 		.. "CHAPTER 4: SITE 2\n"
 		.. "10. Find 4 keycards in the Grand Hotel (2 here, 2 in its Undergrid copy), open the steel door in the "
-		.. "ground floor men's washroom, destroy the 4 Echo Pylons in Site 2 and play the tape in the deep room."
+		.. "ground floor men's washroom, destroy the 4 Echo Pylons in Site 2 and play the tape in the deep room.\n"
+		.. "CHAPTER 5: STATIC STORM\n"
+		.. "11. Close 5 mini-rifts in town (stand in the red circles), defend the WHCK van, then drive the signal "
+		.. "tapes from the radio tower to the Grand Hotel entrance."
 end
 
 local function worldPreset()
 	if player:GetAttribute("Dimension") ~= "Undergrid" then
-		return "Town"
+		return workspace:GetAttribute("Storm") and "Storm" or "Town"
 	end
 	local s = stage()
 	return (s == "Boss" or s == "Carrier") and "UndergridBoss" or "Undergrid"
@@ -775,11 +796,11 @@ end
 
 local function refreshBoss()
 	local s = stage()
-	local fighting = (s == "Boss" or s == "Carrier") and (ReplicatedStorage:GetAttribute("BossMaxHealth") or 0) > 0
+	local fighting = (s == "Boss" or s == "Carrier" or s == "Van") and (ReplicatedStorage:GetAttribute("BossMaxHealth") or 0) > 0
 	bossBar.Visible = fighting
 	if fighting then
 		bossName.Text = ReplicatedStorage:GetAttribute("BossName") or ""
-		bossFill.BackgroundColor3 = s == "Carrier" and Color3.fromRGB(255, 120, 200) or RED
+		bossFill.BackgroundColor3 = (s == "Carrier" and Color3.fromRGB(255, 120, 200)) or (s == "Van" and Color3.fromRGB(70, 140, 255)) or RED
 		local hp = ReplicatedStorage:GetAttribute("BossHealth") or 0
 		local maxHp = math.max(ReplicatedStorage:GetAttribute("BossMaxHealth") or 1, 1)
 		TweenService:Create(bossFill, TweenInfo.new(0.2), { Size = UDim2.fromScale(math.clamp(hp / maxHp, 0, 1), 1) }):Play()
@@ -843,6 +864,7 @@ player:GetAttributeChangedSignal("Carrying"):Connect(function()
 	refreshCarry()
 	refreshObjective()
 end)
+player:GetAttributeChangedSignal("CarryingTape"):Connect(refreshObjective) -- Chapter 5 tape race
 
 -- hide the HUD while the intro broadcast is playing
 -- (and while the start / pause menu is open)
@@ -871,6 +893,10 @@ ReplicatedStorage:GetAttributeChangedSignal("Stage"):Connect(function()
 		applyPreset(worldPreset(), 2)
 	end
 end)
+-- Chapter 5 storm over the town: re-tint when it starts or ends
+workspace:GetAttributeChangedSignal("Storm"):Connect(function()
+	applyPreset(worldPreset(), 3)
+end)
 for _, name in ipairs({ "BossHealth", "BossMaxHealth", "BossOpen", "BossName" }) do
 	ReplicatedStorage:GetAttributeChangedSignal(name):Connect(refreshBoss)
 end
@@ -879,13 +905,14 @@ end
 RunService.Heartbeat:Connect(function()
 	local deadline = ReplicatedStorage:GetAttribute("Deadline") or 0
 	local s = stage()
-	if deadline <= 0 or (s ~= "Carrier" and s ~= "Race") then
+	if deadline <= 0 or (s ~= "Carrier" and s ~= "Race" and s ~= "Van" and s ~= "TapeRace") then
 		timerLabel.Visible = false
 		return
 	end
 	local left = math.max(math.ceil(deadline - workspace:GetServerTimeNow()), 0)
 	local clock = string.format("%d:%02d", left // 60, left % 60)
-	timerLabel.Text = (s == "Race" and "CODE EXPIRES IN " or "SHUTDOWN IN ") .. clock
+	timerLabel.Text = ((s == "Race" and "CODE EXPIRES IN ") or (s == "Van" and "BROADCAST ENDS IN ")
+		or (s == "TapeRace" and "TAPES FAIL IN ") or "SHUTDOWN IN ") .. clock
 	timerLabel.TextColor3 = left <= 10 and RED or Color3.fromRGB(255, 220, 120)
 	timerLabel.Visible = true
 end)
@@ -1651,6 +1678,32 @@ local function currentTarget(from)
 		end
 		return riftOn(side), "RIFT - MORE KEYCARDS ON THE OTHER SIDE"
 	end
+	-- Chapter 5: everything happens in town
+	if (s == "Rifts" or s == "Van" or s == "TapeRace") and inUndergrid then
+		return riftOn("Undergrid"), "RIFT - THE STORM IS IN TOWN"
+	end
+	local storm = workspace:FindFirstChild("StaticStorm")
+	if s == "Rifts" then
+		local best, bestDist = nil, math.huge
+		for _, m in ipairs(storm and storm:GetChildren() or {}) do
+			if m.Name == "MiniRift" and m.PrimaryPart and (m.PrimaryPart.Position - from).Magnitude < bestDist then
+				best, bestDist = m.PrimaryPart, (m.PrimaryPart.Position - from).Magnitude
+			end
+		end
+		return best, "MINI-RIFT"
+	elseif s == "Van" then
+		local vanModel = storm and storm:FindFirstChild("WhckVan")
+		return vanModel and vanModel.PrimaryPart, "WHCK VAN"
+	elseif s == "TapeRace" then
+		if player:GetAttribute("CarryingTape") then
+			return storm and storm:FindFirstChild("TapeGoal"), "GRAND HOTEL - DELIVER"
+		end
+		local tapes = storm and storm:FindFirstChild("SignalTapes")
+		if tapes and tapes.Transparency < 1 then
+			return tapes, "SIGNAL TAPES"
+		end
+		return storm and storm:FindFirstChild("TapeGoal"), "GRAND HOTEL (TAPES ON THE WAY)"
+	end
 	if s == "Pylons" or s == "Tape" then
 		if inUndergrid then
 			return riftOn("Undergrid"), "RIFT - SITE 2 IS IN TOWN"
@@ -1764,6 +1817,15 @@ local function targetOptions(from)
 		for _, p in ipairs(sortedParts("Site2Targets", from)) do
 			add(p, "ECHO PYLON")
 		end
+	elseif s == "Rifts" and not inUndergrid then
+		for _, p in ipairs(sortedParts("StaticStorm", from, function(m)
+			return m.Name == "MiniRift" and m.PrimaryPart or nil
+		end)) do
+			add(p, "MINI-RIFT")
+		end
+	end
+	if s == "Rifts" or s == "Van" or s == "TapeRace" then
+		return options -- the town rift doesn't help in Chapter 5
 	end
 	if s == "Files" then
 		for _, p in ipairs(sortedParts("LowbandFiles", from, function(file)

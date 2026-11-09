@@ -2054,6 +2054,7 @@ local function spawnCreature(at)
 		lastHit = 0, phase = rng:NextNumber(0, 10), speed = CONFIG.CREATURE_SPEED, damage = CONFIG.CREATURE_DAMAGE,
 		hitCooldown = CONFIG.CREATURE_HIT_COOLDOWN, reward = CONFIG.SCRAP_HOLLOWER, height = 5.5,
 	}
+	return m
 end
 
 -- Static Hound (Chapter 3): low, fast, weak, hunts in packs. at: ground point
@@ -2100,12 +2101,16 @@ local function spawnHound(at)
 		lastHit = 0, phase = rng:NextNumber(0, 10), speed = CONFIG.HOUND_SPEED, damage = CONFIG.HOUND_DAMAGE,
 		hitCooldown = CONFIG.HOUND_HIT_COOLDOWN, reward = CONFIG.SCRAP_HOUND, height = 2.3,
 	}
+	return m
 end
 
+-- returns the hound models (chapter modules give them their own targets)
 local function spawnHoundPack(at)
+	local pack = {}
 	for _ = 1, CONFIG.HOUND_PACK do
-		spawnHound(at + Vector3.new(rng:NextNumber(-5, 5), 0, rng:NextNumber(-5, 5)))
+		table.insert(pack, spawnHound(at + Vector3.new(rng:NextNumber(-5, 5), 0, rng:NextNumber(-5, 5))))
 	end
+	return pack
 end
 
 local function killCreature(m)
@@ -2619,6 +2624,10 @@ local function snapshot()
 		chapter, stage, progress = 3, "Files", 0 -- already on the way to Chapter 3
 	elseif chapter == 3 and stage == "Complete" then
 		chapter, stage, progress = 4, "Keycards", 0 -- already on the way to Chapter 4
+	elseif chapter == 4 and stage == "Complete" then
+		chapter, stage, progress = 5, "Rifts", 0 -- already on the way to Chapter 5
+	elseif stage == "Van" or stage == "TapeRace" then
+		progress = 0 -- Chapter 5: the van defence and the tape race restart from their beginning
 	end
 	return chapter, stage, progress
 end
@@ -4302,7 +4311,7 @@ do
 		end,
 		spawnCreature = spawnCreature, spawnHoundPack = spawnHoundPack, clearCreatures = clearCreatures,
 		playersInUndergrid = playersInUndergrid,
-		town = town, undergrid = undergrid,
+		town = town, undergrid = undergrid, console = console, randomOpenPoint = randomOpenPoint,
 		hotelSpot = hotelSpot, HOTEL_CENTER = HOTEL_CENTER, HOTEL_FLOORS = HOTEL_FLOORS, HOTEL_FLOOR_H = HOTEL_FLOOR_H,
 		HOTEL_ROOMS = HOTEL_ROOMS, HOTEL_HALF = HOTEL_HALF,
 		colors = { GREEN = GREEN, WARN = WARN, GLOW = GLOW },
@@ -4647,6 +4656,7 @@ ShiftEvent.OnServerEvent:Connect(function(player)
 			or (stage == "Complete" and "THE UNDERGRID IS QUIET... FOR NOW.")
 			or (stage == "Keycards" and "YOU ENTERED THE UNDERGRID. TWO KEYCARDS ARE IN THE GRAND HOTEL ON THIS SIDE.")
 			or ((stage == "Pylons" or stage == "Tape") and "SITE 2 IS UNDER THE GRAND HOTEL IN HOLLOW CREEK - NOT HERE!")
+			or ((stage == "Rifts" or stage == "Van" or stage == "TapeRace") and "THE STORM IS IN HOLLOW CREEK - GO BACK THROUGH THE RIFT!")
 			or "YOU ENTERED THE UNDERGRID. FIND THE SHARDS."
 		NotifyEvent:FireClient(player, text .. "  SHIELD " .. shieldTime .. "s - THE RIFT AREA IS SAFE", Color3.fromRGB(255, 60, 70))
 	else
