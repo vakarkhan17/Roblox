@@ -125,6 +125,18 @@ local CONFIG = {
 	AMMO_REFILL_FRACTION = 0.5,  -- the free refill tops every gun up to this part of full
 	AMMO_REFILL_PRICE = 40,      -- Scrap for a full refill of every gun you own (Garage / shop)
 	AMMO_DROP_CHANCE = 0.15,     -- a defeated creature drops a spare magazine this often
+
+	-- Robux (task 017). Create these on the Roblox website (Creator Dashboard > your game >
+	-- Monetization > Passes / Developer Products) and paste their ids here. 0 = not set up yet.
+	GAME_PASSES = {
+		vip = 0,   -- VIP PILOT: +25% gameplay Scrap & XP, double daily reward, VIP tag
+		neon = 0,  -- NEON SUIT PACK: 3 exclusive suit paints
+		ammo = 0,  -- AMMO BELT: +50% spare ammo, free Pulse refill every 10 min
+	},
+	PRODUCTS = {
+		scrap500 = 0,  -- 500 SCRAP (can be bought again)
+		scrap1500 = 0, -- 1500 SCRAP
+	},
 }
 
 -- Weapons (robot mode). Bought with Scrap in the shop; one is equipped.
@@ -216,6 +228,7 @@ local hurtPlayer -- (player, humanoid, damage): damage that can put a player DOW
 local PingEvent = makeRemote("Ping")                    -- client -> server: world position; server -> all: position, kind, name
 -- firepower (task 012), defined in the "Firepower" section
 local useAmmo, pushAmmo, dropAmmo, refillAmmo -- (player, weapon) -> may fire / (player) / (position) / (player, fraction)
+local robuxShop -- (profile) -> Game Passes and Scrap packs for the shop's ROBUX tab (task 017, "Robux" section)
 
 -- shared world state (see the Chapters section)
 ReplicatedStorage:SetAttribute("Chapter", 1)
@@ -1461,6 +1474,10 @@ local SUIT_PAINTS = {
 	{ name = "CRIMSON", level = 5, steel = Color3.fromRGB(125, 32, 38), accent = Color3.fromRGB(225, 225, 232), glow = Color3.fromRGB(255, 96, 70) },
 	{ name = "NEON TRIM", level = 10, steel = Color3.fromRGB(30, 30, 42), accent = Color3.fromRGB(255, 60, 200), glow = Color3.fromRGB(255, 60, 200) },
 	{ name = "GOLD", daily = true, steel = Color3.fromRGB(205, 165, 60), accent = Color3.fromRGB(70, 46, 24), glow = Color3.fromRGB(255, 232, 150) },
+	-- NEON SUIT PACK (Game Pass)
+	{ name = "SYNTHWAVE", pass = "neon", steel = Color3.fromRGB(60, 20, 90), accent = Color3.fromRGB(255, 70, 190), glow = Color3.fromRGB(60, 240, 255) },
+	{ name = "CHROME", pass = "neon", steel = Color3.fromRGB(200, 205, 215), accent = Color3.fromRGB(90, 95, 110), glow = Color3.fromRGB(150, 220, 255) },
+	{ name = "STATIC", pass = "neon", steel = Color3.fromRGB(235, 240, 250), accent = Color3.fromRGB(30, 30, 40), glow = Color3.fromRGB(255, 255, 255) },
 }
 local PAINT_ROLE = {
 	Helmet = "steel", Chassis = "steel", Cabin = "steel",
@@ -2423,6 +2440,9 @@ awardScrap = function(player, amount, reason, plain)
 		if player:GetAttribute("FriendBonus") then
 			amount = math.ceil(amount * (1 + CONFIG.FRIEND_BONUS)) -- playing with a friend (task 011)
 		end
+		if profile.passes.vip then
+			amount = math.ceil(amount * 1.25) -- VIP PILOT Game Pass (task 017)
+		end
 		addXp(player, amount)
 	end
 	profile.scrap = profile.scrap + amount
@@ -2463,6 +2483,9 @@ local function paintUnlocked(profile, i)
 	if paint.daily then
 		return profile.gold == true
 	end
+	if paint.pass then
+		return profile.passes[paint.pass] == true -- Game Pass (task 017)
+	end
 	return levelInfo(profile.xp) >= (paint.level or 0)
 end
 
@@ -2482,8 +2505,9 @@ local function lookCatalog(profile)
 		hairs[i] = (need and not (profile and hairUnlocked(profile, i))) and (name:gsub(" %(ANY COLOR%)", "") .. " (LEVEL " .. need .. ")") or name
 	end
 	for i, paint in ipairs(SUIT_PAINTS) do
-		local open = (not paint.level and not paint.daily) or (profile and paintUnlocked(profile, i))
-		paints[i] = open and paint.name or (paint.name .. (paint.daily and " (7-DAY STREAK)" or (" (LEVEL " .. paint.level .. ")")))
+		local open = (not paint.level and not paint.daily and not paint.pass) or (profile and paintUnlocked(profile, i))
+		paints[i] = open and paint.name or (paint.name .. ((paint.daily and " (7-DAY STREAK)") or (paint.pass and " (NEON PACK)")
+			or (" (LEVEL " .. tostring(paint.level) .. ")")))
 	end
 	return { outfits = outfits, hairs = hairs, hairColors = HAIR_COLORS, skins = SKIN_TONES, paints = paints }
 end
@@ -2501,6 +2525,8 @@ local function loadProfile(player)
 		doorFloors = {}, -- this session only: doors opened per hotel floor (ROOM SERVICE)
 		-- task 011: tutorial and the new settings
 		tutorialDone = false, volume = nil, hudSize = nil, damageNumbers = nil,
+		-- task 017: Game Passes owned (checked with Roblox on every join, not saved) and handled receipts
+		passes = {}, receipts = {},
 	}
 	profiles[player] = profile
 	applyLoadout(player)
@@ -2532,12 +2558,20 @@ local function loadProfile(player)
 					if w and w.mag and type(a) == "table" and tonumber(a.mag) and tonumber(a.spare) then
 						profile.ammo[id] = {
 							mag = math.clamp(math.floor(a.mag), 0, w.mag * 2),
-							spare = math.clamp(math.floor(a.spare), 0, w.reserve),
+							spare = math.clamp(math.floor(a.spare), 0, math.floor(w.reserve * 1.5)), -- 1.5: AMMO BELT pass
 						}
 					end
 				end
 			end
 			profile.refillAt = tonumber(data.refillAt)
+			-- task 017: Robux purchases already handled (so a receipt is never granted twice)
+			if type(data.receipts) == "table" then
+				for _, id in ipairs(data.receipts) do
+					if type(id) == "string" then
+						profile.receipts[id] = true
+					end
+				end
+			end
 			-- task 011: anyone with a save from before the tutorial existed already knows how to play
 			profile.tutorialDone = data.tutorialDone ~= false
 			if tonumber(data.volume) then
@@ -2683,6 +2717,12 @@ local function writeSave(player)
 	for _, key in ipairs({ "achievements", "codes" }) do
 		for id in pairs(profile[key]) do
 			table.insert(data[key], id)
+		end
+	end
+	data.receipts = {}
+	for id in pairs(profile.receipts) do
+		if #data.receipts < 200 then
+			table.insert(data.receipts, id)
 		end
 	end
 	updateBoards(player) -- leaderboard (OrderedDataStores), defined in the task 010 section
@@ -3106,7 +3146,8 @@ MetaFunction.OnServerInvoke = function(player, action, arg)
 		end
 		profile.streak = status.streak + 1
 		profile.lastClaimDay = dayNumber()
-		awardScrap(player, CONFIG.DAILY_REWARDS[status.day] or 50, "DAILY REWARD DAY " .. status.day, true)
+		local vip = profile.passes.vip and 2 or 1 -- VIP PILOT: double daily reward
+		awardScrap(player, (CONFIG.DAILY_REWARDS[status.day] or 50) * vip, "DAILY REWARD DAY " .. status.day .. (vip > 1 and " VIP" or ""), true)
 		if status.day == 7 and not profile.gold then
 			profile.gold = true
 			NotifyEvent:FireClient(player, "UNLOCKED: GOLD SUIT PAINT", Color3.fromRGB(255, 214, 90))
@@ -4831,7 +4872,7 @@ local function shopState(profile)
 		owned[id] = true
 	end
 	return { scrap = profile.scrap, weapon = profile.weapon, owned = owned, weapons = weapons, upgrades = upgrades,
-		ammoPrice = CONFIG.AMMO_REFILL_PRICE }
+		ammoPrice = CONFIG.AMMO_REFILL_PRICE, robux = robuxShop and robuxShop(profile) or nil }
 end
 
 -- R / SWAP: switch to the next weapon you own (everyone owns the Pulse Cannon and the Shock Baton)
@@ -4965,6 +5006,11 @@ local function maxMag(profile, w)
 	return math.floor(w.mag * (1 + 0.25 * (profile.upgrades.mag or 0)) + 0.5)
 end
 
+-- spare ammo you can carry: +50% with the AMMO BELT Game Pass (task 017)
+local function reserveOf(profile, w)
+	return profile.passes.ammo and math.floor(w.reserve * 1.5) or w.reserve
+end
+
 -- the ammo of one weapon (nil for the baton); a weapon nobody has fired yet is full
 local function ammoOf(profile, id)
 	local w = WEAPONS[id]
@@ -4973,14 +5019,15 @@ local function ammoOf(profile, id)
 	end
 	local a = profile.ammo[id]
 	if not a then
-		a = { mag = maxMag(profile, w), spare = w.reserve }
+		a = { mag = maxMag(profile, w), spare = reserveOf(profile, w) }
 		profile.ammo[id] = a
 	end
 	return a, w
 end
 
 local function refillInterval(profile)
-	return levelInfo(profile.xp) < 5 and CONFIG.AMMO_REFILL_TIME_NEW or CONFIG.AMMO_REFILL_TIME
+	-- the AMMO BELT pass and new pilots (below level 5) get the faster free refill
+	return (profile.passes.ammo or levelInfo(profile.xp) < 5) and CONFIG.AMMO_REFILL_TIME_NEW or CONFIG.AMMO_REFILL_TIME
 end
 
 -- HUD attributes: Ammo / AmmoMax / AmmoSpare (nil = unlimited), AmmoRefillAt (os.time)
@@ -5067,13 +5114,13 @@ refillAmmo = function(player, fraction, onlyId)
 		end
 		if a then
 			local mm = maxMag(profile, w)
-			local want = math.floor((mm + w.reserve) * fraction)
+			local want = math.floor((mm + reserveOf(profile, w)) * fraction)
 			local add = want - (a.mag + a.spare)
 			if add > 0 then
 				changed = true
 				local toMag = math.min(mm - a.mag, add)
 				a.mag = a.mag + toMag
-				a.spare = math.min(a.spare + add - toMag, w.reserve)
+				a.spare = math.min(a.spare + add - toMag, reserveOf(profile, w))
 			end
 		end
 	end
@@ -5150,11 +5197,11 @@ dropAmmo = function(position)
 		end
 		-- free ammo is only for the basic Pulse Cannon (the bought guns' ammo is bought with Scrap)
 		local a, w = ammoOf(profile, "pulse")
-		if not a or a.spare >= w.reserve then
+		if not a or a.spare >= reserveOf(profile, w) then
 			return -- full: leave it for someone else
 		end
 		taken = true
-		a.spare = math.min(a.spare + maxMag(profile, w), w.reserve)
+		a.spare = math.min(a.spare + maxMag(profile, w), reserveOf(profile, w))
 		pushAmmo(plr)
 		NotifyEvent:FireClient(plr, "+1 MAGAZINE (" .. w.name .. ")", AMMO_ORANGE)
 		box:Destroy()
@@ -5162,6 +5209,149 @@ dropAmmo = function(position)
 	Debris:AddItem(box, 30)
 end
 end -- firepower section
+
+---------------------------------------------------------------------------
+-- Robux (task 017): Game Passes (VIP PILOT, NEON SUIT PACK, AMMO BELT) and Scrap packs.
+-- Ids live in CONFIG.GAME_PASSES / CONFIG.PRODUCTS (0 = not set up yet: the shop says so).
+-- Passes are checked with Roblox on every join; Scrap packs go through ProcessReceipt,
+-- are saved right away, and a receipt is never granted twice.
+---------------------------------------------------------------------------
+do
+local MarketplaceService = game:GetService("MarketplaceService")
+local PASS_INFO = {
+	{ key = "vip", name = "VIP PILOT", color = Color3.fromRGB(255, 214, 90),
+		desc = "+25% Scrap and XP from playing, a double daily reward, and a VIP tag on your HUD." },
+	{ key = "neon", name = "NEON SUIT PACK", color = Color3.fromRGB(255, 70, 190),
+		desc = "3 exclusive suit paints: SYNTHWAVE, CHROME and STATIC (YOUR PILOT > SUIT PAINT)." },
+	{ key = "ammo", name = "AMMO BELT", color = Color3.fromRGB(255, 170, 40),
+		desc = "+50% spare ammo for every gun, and the free Pulse Cannon refill every 10 minutes." },
+}
+local PRODUCT_INFO = {
+	{ key = "scrap500", name = "500 SCRAP", scrap = 500, color = Color3.fromRGB(255, 235, 140), desc = "Added right away. Spend it in the Garage." },
+	{ key = "scrap1500", name = "1500 SCRAP", scrap = 1500, color = Color3.fromRGB(255, 235, 140), desc = "The big pack. Added right away." },
+}
+local passKeyById, productById = {}, {}
+for key, id in pairs(CONFIG.GAME_PASSES) do
+	if id ~= 0 then
+		passKeyById[id] = key
+	end
+end
+for _, p in ipairs(PRODUCT_INFO) do
+	local id = CONFIG.PRODUCTS[p.key] or 0
+	if id ~= 0 then
+		productById[id] = p
+	end
+end
+
+local priceCache = {}
+local function priceOf(id, infoType)
+	if id == 0 then
+		return nil
+	end
+	if priceCache[id] == nil then
+		local ok, info = pcall(function()
+			return MarketplaceService:GetProductInfo(id, infoType)
+		end)
+		priceCache[id] = ok and info and info.PriceInRobux or false
+	end
+	return priceCache[id] or nil
+end
+
+robuxShop = function(profile)
+	local passes, products = {}, {}
+	for _, p in ipairs(PASS_INFO) do
+		local id = CONFIG.GAME_PASSES[p.key] or 0
+		table.insert(passes, { key = p.key, id = id, name = p.name, desc = p.desc, color = p.color, owned = profile.passes[p.key] == true,
+			price = priceOf(id, Enum.InfoType.GamePass) })
+	end
+	for _, p in ipairs(PRODUCT_INFO) do
+		local id = CONFIG.PRODUCTS[p.key] or 0
+		table.insert(products, { key = p.key, id = id, name = p.name, desc = p.desc, color = p.color, price = priceOf(id, Enum.InfoType.Product) })
+	end
+	return { passes = passes, products = products }
+end
+
+local function applyPasses(player)
+	local profile = profiles[player]
+	if not profile then
+		return
+	end
+	player:SetAttribute("VIP", profile.passes.vip or nil)
+	applyLoadout(player) -- also refreshes the ammo HUD (AMMO BELT)
+end
+
+local function checkPasses(player)
+	local start = os.clock()
+	while player.Parent and not (profiles[player] and profiles[player].loaded) and os.clock() - start < 60 do
+		task.wait(0.5)
+	end
+	local profile = profiles[player]
+	if not profile then
+		return
+	end
+	for key, id in pairs(CONFIG.GAME_PASSES) do
+		if id ~= 0 then
+			local ok, owns = pcall(function()
+				return MarketplaceService:UserOwnsGamePassAsync(player.UserId, id)
+			end)
+			if ok and owns then
+				profile.passes[key] = true
+			end
+		end
+	end
+	applyPasses(player)
+end
+Players.PlayerAdded:Connect(checkPasses)
+for _, plr in ipairs(Players:GetPlayers()) do
+	task.spawn(checkPasses, plr)
+end
+
+-- bought a pass in this session
+MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player, passId, purchased)
+	local key = passKeyById[passId]
+	local profile = profiles[player]
+	if not purchased or not key or not profile then
+		return
+	end
+	profile.passes[key] = true
+	applyPasses(player)
+	for _, p in ipairs(PASS_INFO) do
+		if p.key == key then
+			NotifyEvent:FireClient(player, "THANK YOU! " .. p.name .. " IS ACTIVE", p.color)
+		end
+	end
+end)
+
+-- Scrap packs (developer products)
+MarketplaceService.ProcessReceipt = function(info)
+	local player = Players:GetPlayerByUserId(info.PlayerId)
+	local profile = player and profiles[player]
+	if not profile or not profile.loaded then
+		return Enum.ProductPurchaseDecision.NotProcessedYet -- Roblox tries again later (e.g. when they rejoin)
+	end
+	if profile.receipts[info.PurchaseId] then
+		return Enum.ProductPurchaseDecision.PurchaseGranted -- already given
+	end
+	local product = productById[info.ProductId]
+	if not product then
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+	if profile.available and not profile.chosen then
+		return Enum.ProductPurchaseDecision.NotProcessedYet -- still in the start menu: their save isn't written yet
+	end
+	profile.receipts[info.PurchaseId] = true
+	awardScrap(player, product.scrap, product.name, true)
+	if profile.available and not writeSave(player) then
+		-- not saved: undo, Roblox will try again
+		profile.receipts[info.PurchaseId] = nil
+		profile.scrap = math.max(profile.scrap - product.scrap, 0)
+		applyLoadout(player)
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+	NotifyEvent:FireClient(player, "THANK YOU! +" .. product.scrap .. " SCRAP", product.color)
+	return Enum.ProductPurchaseDecision.PurchaseGranted
+end
+end -- Robux section
 
 ---------------------------------------------------------------------------
 -- Friends and co-op (task 011): DOWN + revive, ping markers, friend bonus

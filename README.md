@@ -72,6 +72,18 @@ Saving uses DataStores, so in Studio it only works when:
 Otherwise the game still runs and the menu shows `SAVING UNAVAILABLE` with only NEW GAME.
 The game auto-saves on every chapter start and stage change and when you leave; SAVE / K saves at any time (once every 15 s).
 
+## Robux (Game Passes and Scrap packs)
+The shop's **ROBUX** tab sells VIP PILOT, NEON SUIT PACK, AMMO BELT (Game Passes) and 500 / 1500 SCRAP (Developer Products).
+To switch them on:
+1. Publish the game.
+2. Create the passes and products on the Roblox website (Creator Dashboard → your game → Monetization).
+3. Paste their ids into `CONFIG.GAME_PASSES` and `CONFIG.PRODUCTS` at the top of the server script.
+
+Until then the shop shows them as "SOON". Details: `docs/tasks/017-game-passes.md`.
+
+## Sound and music
+All sound ids are in `src/client/Sound.client.lua`: `SOUNDS` (effects, built-in Roblox sounds to start with) and `MUSIC` (empty: add music ids you're allowed to use).
+
 ## Tuning
 Everything is in the `CONFIG` table at the top of the server script: speeds, damage, creature count, shards needed, etc.
 

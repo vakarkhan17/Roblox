@@ -805,13 +805,13 @@ showShop = function(state)
 
 	local tabs = make("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 52), LayoutOrder = 4 }, panel)
 	list(tabs, 12, true)
-	for i, tab in ipairs({ { "weapons", "WEAPONS" }, { "upgrades", "UPGRADES" } }) do
+	for i, tab in ipairs({ { "weapons", "WEAPONS" }, { "upgrades", "UPGRADES" }, { "robux", "ROBUX" } }) do
 		local active = shopTab == tab[1]
 		local b = button(tabs, tab[2], active and YELLOW or DIM, function()
 			shopTab = tab[1]
 			showShop(state)
 		end, i)
-		b.Size = UDim2.fromOffset(200, 48)
+		b.Size = UDim2.fromOffset(170, 48)
 	end
 
 	-- the rows scroll (keep the scroll position while buying)
@@ -857,6 +857,39 @@ showShop = function(state)
 				if action then
 					showShop(shopCall(action, w.id))
 				end
+			end)
+			order = order + 1
+		end
+	elseif shopTab == "robux" then
+		-- task 017: Game Passes (once) and Scrap packs (again and again), through Roblox's own purchase window
+		local MarketplaceService = game:GetService("MarketplaceService")
+		local robux = state.robux or { passes = {}, products = {} }
+		local function buy(item, isPass)
+			if item.id == 0 then
+				showToast("NOT SET UP YET - THE GAME'S OWNER ADDS IT ON THE ROBLOX WEBSITE", RED)
+				return
+			end
+			pcall(function()
+				if isPass then
+					MarketplaceService:PromptGamePassPurchase(player, item.id)
+				else
+					MarketplaceService:PromptProductPurchase(player, item.id)
+				end
+			end)
+		end
+		for _, p in ipairs(robux.passes) do
+			local label = (p.owned and "OWNED") or (p.id == 0 and "SOON") or (p.price and ("R$ " .. p.price) or "BUY")
+			shopRow(order, p.color, p.name, p.desc, "GAME PASS - YOURS FOREVER", label, p.owned and GREEN or YELLOW, function()
+				if not p.owned then
+					buy(p, true)
+				end
+			end)
+			order = order + 1
+		end
+		for _, p in ipairs(robux.products) do
+			local label = (p.id == 0 and "SOON") or (p.price and ("R$ " .. p.price) or "BUY")
+			shopRow(order, p.color, p.name, p.desc, nil, label, YELLOW, function()
+				buy(p, false)
 			end)
 			order = order + 1
 		end
@@ -1586,6 +1619,27 @@ ElevatorMenuEvent.OnClientEvent:Connect(function(currentFloor, floors)
 	end, 3 + floors)
 	setFocus(currentFloor == 1 and 2 or 1)
 end)
+
+-- after a Robux purchase window closes: refresh the shop if it's open (OWNED, new Scrap)
+do
+	local MarketplaceService = game:GetService("MarketplaceService")
+	local function refreshShop()
+		task.wait(1.5)
+		if backdrop.Visible and shopTab == "robux" and shopList and shopList.Parent then
+			showShop()
+		end
+	end
+	MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(who)
+		if who == player then
+			task.spawn(refreshShop)
+		end
+	end)
+	MarketplaceService.PromptProductPurchaseFinished:Connect(function(userId)
+		if userId == player.UserId then
+			task.spawn(refreshShop)
+		end
+	end)
+end
 
 -- the Scrap Garage counter in town opens the shop
 game:GetService("ProximityPromptService").PromptTriggered:Connect(function(prompt, who)

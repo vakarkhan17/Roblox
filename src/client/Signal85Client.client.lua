@@ -291,7 +291,7 @@ local helpButton = button(panel, "?", { AnchorPoint = Vector2.new(1, 0), Positio
 
 -- pilot level: "LV 3" by the title and a thin XP bar along the bottom of the panel (attributes from the server)
 local levelLabel = label(panel, { Text = "LV 1", TextSize = 18, TextColor3 = Color3.fromRGB(120, 255, 160), TextXAlignment = Enum.TextXAlignment.Right,
-	Position = UDim2.fromOffset(150, 12), Size = UDim2.fromOffset(82, 22) })
+	Position = UDim2.fromOffset(120, 12), Size = UDim2.fromOffset(112, 22) })
 local xpBack = Instance.new("Frame")
 xpBack.Position = UDim2.new(0, 0, 1, -5)
 xpBack.Size = UDim2.new(1, 0, 0, 5)
@@ -306,10 +306,10 @@ xpFill.Parent = xpBack
 local function updateLevel()
 	local level = player:GetAttribute("Level") or 1
 	local need = math.max(player:GetAttribute("XPNeed") or 100, 1)
-	levelLabel.Text = (player:GetAttribute("Title") and "VET " or "LV ") .. level
+	levelLabel.Text = (player:GetAttribute("VIP") and "VIP " or "") .. (player:GetAttribute("Title") and "VET " or "LV ") .. level
 	TweenService:Create(xpFill, TweenInfo.new(0.3), { Size = UDim2.fromScale(math.clamp((player:GetAttribute("XP") or 0) / need, 0, 1), 1) }):Play()
 end
-for _, name in ipairs({ "Level", "XP", "XPNeed", "Title" }) do
+for _, name in ipairs({ "Level", "XP", "XPNeed", "Title", "VIP" }) do
 	player:GetAttributeChangedSignal(name):Connect(updateLevel)
 end
 updateLevel()
