@@ -28,6 +28,7 @@ local RadioEvent = remotes:WaitForChild("Radio")
 local HitEvent = remotes:WaitForChild("Hit")
 local SuitEvent = remotes:WaitForChild("Suit")
 local CycleWeaponEvent = remotes:WaitForChild("CycleWeapon")
+local PingEvent = remotes:WaitForChild("Ping")
 local rifts = workspace:WaitForChild("Rifts")
 
 local RIFT_RANGE = 12
@@ -187,11 +188,18 @@ stroke.Thickness = 2
 stroke.Parent = panel
 
 -- shrink the left-side HUD on phones so it leaves room for the thumbstick
+-- plus the HUD SIZE setting (MENU > SETTINGS: small / normal / large)
 local HUD_SCALE = SMALL_SCREEN and 0.75 or 1
+local HUD_SIZES = { 0.8, 1, 1.25 }
+local hudScales = {}
+local function hudScaleNow()
+	return HUD_SCALE * (HUD_SIZES[player:GetAttribute("HudSize") or 2] or 1)
+end
 local function hudScale(frame)
 	local s = Instance.new("UIScale")
-	s.Scale = HUD_SCALE
+	s.Scale = hudScaleNow()
 	s.Parent = frame
+	table.insert(hudScales, s)
 end
 hudScale(panel)
 
@@ -298,6 +306,15 @@ objective.BackgroundTransparency = 0.25
 objective.BorderSizePixel = 0
 objective.Parent = gui
 hudScale(objective)
+local function applyHudSize()
+	local scale = hudScaleNow()
+	for _, s in ipairs(hudScales) do
+		s.Scale = scale
+	end
+	objective.Position = UDim2.fromOffset(16, 56 + math.floor(226 * scale))
+end
+player:GetAttributeChangedSignal("HudSize"):Connect(applyHudSize)
+applyHudSize()
 local objectiveStroke = Instance.new("UIStroke")
 objectiveStroke.Color = CYAN
 objectiveStroke.Thickness = 2
@@ -501,7 +518,7 @@ touchPad.Name = "TouchControls"
 touchPad.AnchorPoint = Vector2.new(1, 1)
 -- sits above Roblox's jump button (smaller and lower on phones)
 touchPad.Position = SMALL_SCREEN and UDim2.new(1, -12, 1, -105) or UDim2.new(1, -24, 1, -225)
-touchPad.Size = UDim2.fromOffset(5 * 78 + 4 * 10, 78)
+touchPad.Size = UDim2.fromOffset(6 * 78 + 5 * 10, 78)
 touchPad.BackgroundTransparency = 1
 touchPad.Visible = IS_TOUCH
 touchPad.Parent = gui
@@ -538,6 +555,10 @@ local transformButton = touchButton(1, "SUIT UP", CYAN)
 local swapButton = touchButton(2, "SWAP", Color3.fromRGB(255, 240, 120)) -- next weapon (robot mode)
 local blastButton = touchButton(3, "BLAST", RED)
 local riftButton = touchButton(4, "RIFT", AMBER)
+local pingButton = touchButton(5, "PING", Color3.fromRGB(80, 220, 255)) -- mark a spot for your team
+-- names the tutorial uses to point at them
+suitButton.Name, transformButton.Name, swapButton.Name = "SuitButton", "TransformButton", "SwapButton"
+blastButton.Name, riftButton.Name, pingButton.Name = "BlastButton", "RiftButton", "PingButton"
 
 local crosshair = label(gui, {
 	Text = "+", TextSize = 40, TextColor3 = RED, TextStrokeTransparency = 0.2, TextXAlignment = Enum.TextXAlignment.Center,
@@ -673,8 +694,23 @@ local function refreshObjective()
 		objectiveText.Text = "RIFT SEALED! But the signal does not stop... Chapter 2 begins soon."
 	elseif s == "Complete" and chapter == 2 then
 		objectiveText.Text = "THE MIND WARDEN IS GONE... but the radio tower hears something again. Chapter 3 begins soon."
+	elseif s == "Complete" and chapter == 3 then
+		objectiveText.Text = "THE CARRIER IS SILENT... but one pulse came from far below. Chapter 4 begins soon."
+	elseif s == "Complete" and chapter == 4 then
+		objectiveText.Text = "Every radio in Hollow Creek switched on by itself. The Listener knows. TO BE CONTINUED IN CHAPTER 5."
 	elseif s == "Complete" then
-		objectiveText.Text = "THE SIGNAL IS QUIET... FOR NOW. TO BE CONTINUED IN CHAPTER 4. Explore freely."
+		objectiveText.Text = "THE SIGNAL IS QUIET... FOR NOW. Explore freely."
+	elseif s == "Keycards" then
+		objectiveText.Text = "Find the 4 green KEYCARDS: 2 in the Grand Hotel here (room 302, the roof), 2 in its Undergrid copy "
+			.. "(room 209, behind reception). Open room doors with " .. (IS_PHONE and "the prompt" or "[E]") .. "."
+		objectiveGoal.Text = "KEYCARDS: " .. progress .. "/" .. goal .. " FOUND"
+	elseif s == "Pylons" then
+		objectiveText.Text = inUndergrid and "Site 2 is under the Grand Hotel in HOLLOW CREEK. Go back through the rift."
+			or "Go down into SITE 2 (the steel door in the ground floor men's washroom of the Grand Hotel) and destroy the 4 ECHO PYLONS. "
+			.. "Echoes shoot back: use the walls as cover."
+		objectiveGoal.Text = "ECHO PYLONS: " .. progress .. "/" .. goal .. " DESTROYED"
+	elseif s == "Tape" then
+		objectiveText.Text = "The vault in Site 2 is open. Go to the DEEP ROOM at the north end and PLAY THE TAPE."
 	elseif s == "Files" then
 		objectiveText.Text = "Find the glowing yellow LOWBAND files in the old lab in the woods west of town (" .. progress .. "/" .. goal
 			.. "). Some are only in the lab's Undergrid copy: use the small rift by the lab's east door."
@@ -723,7 +759,10 @@ local function refreshObjective()
 		.. "CHAPTER 3: LOWBAND\n"
 		.. "7. Find 5 LOWBAND files in the lab in the woods west of town (some only in its Undergrid copy).\n"
 		.. "8. Stand in the 3 relay circles around the Undergrid lab until they are full.\n"
-		.. "9. Defend the Carrier, then race its code to the radio tower console in car mode."
+		.. "9. Defend the Carrier, then race its code to the radio tower console in car mode.\n"
+		.. "CHAPTER 4: SITE 2\n"
+		.. "10. Find 4 keycards in the Grand Hotel (2 here, 2 in its Undergrid copy), open the steel door in the "
+		.. "ground floor men's washroom, destroy the 4 Echo Pylons in Site 2 and play the tape in the deep room."
 end
 
 local function worldPreset()
@@ -934,7 +973,8 @@ HitEvent.OnClientEvent:Connect(function(position, amount, killed)
 	if typeof(position) ~= "Vector3" then
 		return
 	end
-	-- number floating up from the hit
+	-- number floating up from the hit (MENU > SETTINGS > DAMAGE NUMBERS can turn it off)
+	if player:GetAttribute("DamageNumbers") ~= false then
 	local anchor = Instance.new("Part")
 	anchor.Anchored = true
 	anchor.CanCollide = false
@@ -956,6 +996,7 @@ HitEvent.OnClientEvent:Connect(function(position, amount, killed)
 	TweenService:Create(anchor, TweenInfo.new(0.8, Enum.EasingStyle.Quad), { Position = anchor.Position + Vector3.new(0, 4, 0) }):Play()
 	TweenService:Create(number, TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()
 	game:GetService("Debris"):AddItem(anchor, 0.9)
+	end
 
 	-- hit marker where you aimed: the + on touch, the mouse on a laptop
 	hitToken = hitToken + 1
@@ -1032,7 +1073,7 @@ end)
 -- touch aim: where the + in the middle of the screen points, locking on to
 -- the target closest to it if one is within AIM_ASSIST_DEG and in range.
 -- Targets: Hollowers, Hive Nodes, and the Mind Warden's weak point.
-local AIM_FOLDERS = { "Creatures", "HiveNodes", "Boss" }
+local AIM_FOLDERS = { "Creatures", "HiveNodes", "Boss", "Site2Targets" }
 
 local function crosshairAim()
 	local cam = workspace.CurrentCamera
@@ -1136,7 +1177,11 @@ local function startFiring(source, fromTouch, auto)
 	fireSource = source
 	while fireSource == source do
 		if canAct() and currentMode == "Robot" then
-			BlastEvent:FireServer(aimPoint(fromTouch, auto))
+			local point = aimPoint(fromTouch, auto)
+			BlastEvent:FireServer(point)
+			-- local only: the tutorial checks its practice targets with these
+			player:SetAttribute("LastShot", point)
+			player:SetAttribute("ShotCount", (player:GetAttribute("ShotCount") or 0) + 1)
 		end
 		-- the equipped weapon's fire rate (set by the server), plus a little slack
 		local cooldown = player:GetAttribute("WeaponCooldown")
@@ -1193,6 +1238,181 @@ ContextActionService:BindAction("S85_Shift", onAction, false, Enum.KeyCode.E, En
 ContextActionService:BindAction("S85_Help", onAction, false, Enum.KeyCode.H, Enum.KeyCode.ButtonSelect)
 ContextActionService:BindAction("S85_LightUp", onAction, false, Enum.KeyCode.Equals, Enum.KeyCode.KeypadPlus, Enum.KeyCode.DPadUp)
 ContextActionService:BindAction("S85_LightDown", onAction, false, Enum.KeyCode.Minus, Enum.KeyCode.KeypadMinus, Enum.KeyCode.DPadDown)
+
+---------------------------------------------------------------------------
+-- Ping (task 011): T / PING marks where you look for everyone in the server.
+-- The server snaps it onto an enemy (red) or an item (yellow) next to it.
+---------------------------------------------------------------------------
+do
+local function sendPing()
+	if not canAct() then
+		return
+	end
+	local cam = workspace.CurrentCamera
+	local origin, dir
+	if IS_PHONE or not UserInputService.MouseEnabled then
+		origin, dir = cam.CFrame.Position, cam.CFrame.LookVector -- the middle of the screen
+	else
+		local ray = cam:ViewportPointToRay(mouse.X, mouse.Y)
+		origin, dir = ray.Origin, ray.Direction
+	end
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { player.Character }
+	local hit = workspace:Raycast(origin, dir.Unit * 400, params)
+	PingEvent:FireServer(hit and hit.Position or origin + dir.Unit * 120)
+end
+
+ContextActionService:BindAction("S85_Ping", function(_, inputState)
+	if inputState == Enum.UserInputState.Begin then
+		sendPing()
+	end
+	return Enum.ContextActionResult.Pass
+end, false, Enum.KeyCode.T, Enum.KeyCode.DPadLeft)
+pingButton.Activated:Connect(sendPing)
+
+local PING_LOOK = {
+	enemy = { color = RED, icon = "!" },
+	item = { color = Color3.fromRGB(255, 235, 140), icon = "*" },
+	spot = { color = CYAN, icon = "v" },
+}
+PingEvent.OnClientEvent:Connect(function(position, kind, name)
+	if typeof(position) ~= "Vector3" then
+		return
+	end
+	local look = PING_LOOK[kind] or PING_LOOK.spot
+	local anchor = Instance.new("Part")
+	anchor.Anchored = true
+	anchor.CanCollide = false
+	anchor.CanQuery = false
+	anchor.CanTouch = false
+	anchor.Transparency = 1
+	anchor.Size = Vector3.one * 0.2
+	anchor.Position = position + Vector3.new(0, 3, 0)
+	anchor.Parent = workspace
+	local board = Instance.new("BillboardGui")
+	board.Size = UDim2.fromOffset(160, 70)
+	board.AlwaysOnTop = true
+	board.MaxDistance = 1000
+	board.Adornee = anchor
+	board.Parent = anchor
+	local icon = label(board, {
+		Text = look.icon, TextSize = 34, TextColor3 = look.color, TextStrokeTransparency = 0.1,
+		TextXAlignment = Enum.TextXAlignment.Center, Size = UDim2.new(1, 0, 0, 38),
+	})
+	label(board, {
+		Text = tostring(name), Font = Enum.Font.Code, TextSize = 14, TextColor3 = look.color, TextStrokeTransparency = 0.2,
+		TextXAlignment = Enum.TextXAlignment.Center, Position = UDim2.fromOffset(0, 38), Size = UDim2.new(1, 0, 0, 16),
+	})
+	local distance = label(board, {
+		Text = "", Font = Enum.Font.Code, TextSize = 13, TextColor3 = look.color, TextStrokeTransparency = 0.2,
+		TextXAlignment = Enum.TextXAlignment.Center, Position = UDim2.fromOffset(0, 54), Size = UDim2.new(1, 0, 0, 14),
+	})
+	local ring = Instance.new("Part") -- a glowing ring on the ground, visible in the world too
+	ring.Shape = Enum.PartType.Cylinder
+	ring.Anchored = true
+	ring.CanCollide = false
+	ring.CanQuery = false
+	ring.CanTouch = false
+	ring.Material = Enum.Material.Neon
+	ring.Color = look.color
+	ring.Transparency = 0.4
+	ring.Size = Vector3.new(0.2, 6, 6)
+	ring.CFrame = CFrame.new(position) * CFrame.Angles(0, 0, math.rad(90))
+	ring.Parent = anchor
+	local started = os.clock()
+	local conn
+	conn = RunService.Heartbeat:Connect(function()
+		local age = os.clock() - started
+		local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+		if hrp then
+			distance.Text = math.floor((hrp.Position - position).Magnitude) .. " studs"
+		end
+		icon.TextSize = 34 + math.sin(age * 8) * 4
+		if age > 8 or not anchor.Parent then
+			conn:Disconnect()
+			anchor:Destroy()
+		end
+	end)
+end)
+
+---------------------------------------------------------------------------
+-- DOWN (task 011): when a teammate can revive you, a killing hit puts you down
+-- for a while instead. Your own revive prompt is hidden from you.
+---------------------------------------------------------------------------
+local downLabel = label(gui, {
+	Text = "", TextSize = 26, TextColor3 = RED, TextStrokeTransparency = 0.1, TextXAlignment = Enum.TextXAlignment.Center,
+	TextWrapped = true, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.3), Size = UDim2.fromOffset(560, 80),
+	Visible = false, ZIndex = 12,
+})
+RunService.Heartbeat:Connect(function()
+	local char = player.Character
+	local downed = char and char:GetAttribute("Downed")
+	downLabel.Visible = downed == true and gui.Enabled
+	if downed then
+		local left = math.max(math.ceil((char:GetAttribute("DownedUntil") or 0) - workspace:GetServerTimeNow()), 0)
+		downLabel.Text = "YOU ARE DOWN!\nA TEAMMATE CAN REVIVE YOU - " .. left .. " s"
+		local hrp = char:FindFirstChild("HumanoidRootPart")
+		local own = hrp and hrp:FindFirstChild("RevivePrompt")
+		if own and own.Enabled then
+			own.Enabled = false -- only on this screen: you can't revive yourself
+		end
+		lowHealth.Visible = true
+	end
+end)
+end -- ping / DOWN
+
+---------------------------------------------------------------------------
+-- Ammo (task 012): magazine / spare under the screen centre, reload and the free refill timer
+---------------------------------------------------------------------------
+do
+local ammoLabel = label(gui, {
+	Text = "", TextSize = 22, TextColor3 = AMBER, TextStrokeTransparency = 0.2, TextXAlignment = Enum.TextXAlignment.Center,
+	AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -150), Size = UDim2.fromOffset(460, 26), Visible = false,
+})
+local refillLabel = label(gui, {
+	Text = "", Font = Enum.Font.Code, TextSize = 15, TextColor3 = Color3.fromRGB(255, 170, 40), TextStrokeTransparency = 0.3,
+	TextXAlignment = Enum.TextXAlignment.Center, AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -128),
+	Size = UDim2.fromOffset(460, 18), Visible = false,
+})
+local function clock(seconds)
+	seconds = math.max(math.floor(seconds), 0)
+	return string.format("%d:%02d", seconds // 60, seconds % 60)
+end
+RunService.Heartbeat:Connect(function()
+	local show = gui.Enabled and currentMode == "Robot"
+	ammoLabel.Visible = show
+	refillLabel.Visible = show
+	if not show then
+		return
+	end
+	local name = player:GetAttribute("WeaponName") or ""
+	local ammo = player:GetAttribute("Ammo")
+	local refillAt = player:GetAttribute("AmmoRefillAt")
+	-- the free refill is only for the Pulse Cannon; the bought guns refill at the Garage
+	local refillText = player:GetAttribute("Weapon") ~= "pulse" and "REFILL THIS GUN WITH SCRAP AT THE GARAGE / SHOP"
+		or (refillAt and ("FREE HALF REFILL IN " .. clock(refillAt - os.time())) or "")
+	if ammo == nil then
+		ammoLabel.Text = name .. "  -  UNLIMITED"
+		ammoLabel.TextColor3 = Color3.fromRGB(255, 240, 120)
+		refillLabel.Text = ""
+		return
+	end
+	local spare = player:GetAttribute("AmmoSpare") or 0
+	local max = player:GetAttribute("AmmoMax") or ammo
+	if player:GetAttribute("Reloading") then
+		ammoLabel.Text = name .. "  RELOADING..."
+		ammoLabel.TextColor3 = CYAN
+	elseif ammo <= 0 and spare <= 0 then
+		ammoLabel.Text = "OUT OF AMMO!  " .. (IS_TOUCH and "SWAP" or "R") .. " = SHOCK BATON, OR BUY AT THE GARAGE"
+		ammoLabel.TextColor3 = RED
+	else
+		ammoLabel.Text = name .. "  " .. ammo .. " / " .. max .. "   SPARE " .. spare
+		ammoLabel.TextColor3 = (ammo <= math.max(math.floor(max * 0.25), 1)) and RED or AMBER
+	end
+	refillLabel.Text = refillText
+end)
+end -- ammo
 
 transformButton.Activated:Connect(function()
 	if canAct() then
@@ -1399,6 +1619,16 @@ local function nearestRelay(from)
 	return best
 end
 
+-- Chapter 4: Site 2 lies under the town hotel (the server sets its centre and half size)
+local function inSite2(position)
+	local center, half = workspace:GetAttribute("Site2Center"), workspace:GetAttribute("Site2Half")
+	if not center or not half then
+		return false
+	end
+	local rel = position - center
+	return math.abs(rel.X) < half.X + 2 and math.abs(rel.Z) < half.Z + 2 and rel.Y > -3 and rel.Y < half.Y + 3
+end
+
 local function currentTarget(from)
 	local s = stage()
 	local inUndergrid = player:GetAttribute("Dimension") == "Undergrid"
@@ -1406,6 +1636,34 @@ local function currentTarget(from)
 	local carrying = player:GetAttribute("Carrying") or 0
 	if s == "Complete" then
 		return nil
+	end
+	-- Chapter 4: keycards on this side of the rift, then the Site 2 door, the pylons and the tape
+	if s == "Keycards" then
+		local cards = workspace:FindFirstChild("Keycards")
+		local best, bestDist = nil, math.huge
+		for _, card in ipairs(cards and cards:GetChildren() or {}) do
+			if card:IsA("BasePart") and card:GetAttribute("Dimension") == side and (card.Position - from).Magnitude < bestDist then
+				best, bestDist = card, (card.Position - from).Magnitude
+			end
+		end
+		if best then
+			return best, "KEYCARD"
+		end
+		return riftOn(side), "RIFT - MORE KEYCARDS ON THE OTHER SIDE"
+	end
+	if s == "Pylons" or s == "Tape" then
+		if inUndergrid then
+			return riftOn("Undergrid"), "RIFT - SITE 2 IS IN TOWN"
+		end
+		if not inSite2(from) then
+			local entrance = workspace:FindFirstChild("Site2Entrance")
+			return entrance and entrance:FindFirstChild("Site2Door"), "SITE 2 DOOR (MEN'S WASHROOM)"
+		end
+		if s == "Pylons" then
+			return nearestIn("Site2Targets", from), "ECHO PYLON"
+		end
+		local site = workspace:FindFirstChild("Site2")
+		return site and site:FindFirstChild("Site2Tape"), "THE TAPE (DEEP ROOM)"
 	end
 	if s == "Shards" and carrying > 0 then
 		if inUndergrid then
@@ -1443,52 +1701,234 @@ local function currentTarget(from)
 	return nil
 end
 
+-- every place you could go now, the recommended one first (task 012). The TARGET button / Y
+-- switches between them; the choice goes back to the recommended one when the stage changes.
+-- (inside a do-block: Luau allows 200 locals at the top level of a script)
+do
+local function sortedParts(folderName, from, pick)
+	local folder = workspace:FindFirstChild(folderName)
+	local list = {}
+	for _, child in ipairs(folder and folder:GetChildren() or {}) do
+		local p = pick and pick(child) or (child:IsA("BasePart") and child) or (child:IsA("Model") and child.PrimaryPart) or nil
+		if p then
+			table.insert(list, p)
+		end
+	end
+	table.sort(list, function(a, b)
+		return (a.Position - from).Magnitude < (b.Position - from).Magnitude
+	end)
+	return list
+end
+
+local function targetOptions(from)
+	local options, seen = {}, {}
+	local function add(part, name)
+		if part and not seen[part] then
+			seen[part] = true
+			table.insert(options, { part = part, name = name })
+		end
+	end
+	local recommended, recName = currentTarget(from)
+	add(recommended, recName)
+
+	local s = stage()
+	local inUndergrid = player:GetAttribute("Dimension") == "Undergrid"
+	local side = inUndergrid and "Undergrid" or "Town"
+	if s == "Complete" then
+		return options
+	end
+	if inUndergrid then
+		if s == "Shards" then
+			for _, p in ipairs(sortedParts("SignalShards", from)) do
+				add(p, "SHARD")
+			end
+		elseif s == "Nodes" then
+			for _, p in ipairs(sortedParts("HiveNodes", from)) do
+				add(p, "HIVE NODE")
+			end
+		elseif s == "Relays" then
+			for _, p in ipairs(sortedParts("Relays", from, function(relay)
+				return not relay:GetAttribute("Done") and relay.PrimaryPart or nil
+			end)) do
+				add(p, "POWER RELAY")
+			end
+		end
+	end
+	if s == "Keycards" then
+		for _, p in ipairs(sortedParts("Keycards", from, function(card)
+			return card:IsA("BasePart") and card:GetAttribute("Dimension") == side and card or nil
+		end)) do
+			add(p, "KEYCARD")
+		end
+	elseif s == "Pylons" and inSite2(from) then
+		for _, p in ipairs(sortedParts("Site2Targets", from)) do
+			add(p, "ECHO PYLON")
+		end
+	end
+	if s == "Files" then
+		for _, p in ipairs(sortedParts("LowbandFiles", from, function(file)
+			return file:IsA("BasePart") and file:GetAttribute("Dimension") == side and file or nil
+		end)) do
+			add(p, "LOWBAND FILE")
+		end
+	end
+	if s == "Shards" and not inUndergrid and (player:GetAttribute("Carrying") or 0) > 0 then
+		add(findConsole(), "CONSOLE - DELIVER")
+	end
+	if not inSite2(from) then
+		add(riftOn(side), inUndergrid and "RIFT - BACK TO TOWN" or "RIFT")
+	end
+	return options
+end
+
+local targetChoice = 1
+local targetKey = nil -- stage + world: a change resets the choice
+local targetCount = 0
+
+local function cycleTarget()
+	targetChoice = targetCount > 0 and (targetChoice % targetCount + 1) or 1
+end
+
+-- compass at the top: an arrow that turns toward the target, with plain words
+local compass = Instance.new("Frame")
+compass.AnchorPoint = Vector2.new(0.5, 0)
+compass.Size = UDim2.fromOffset(300, 96)
+compass.BackgroundTransparency = 1
+compass.Visible = false
+compass.Parent = gui
+local compassArrow = label(compass, {
+	Text = "▲", TextSize = 44, TextColor3 = YELLOW, TextStrokeTransparency = 0.1, TextXAlignment = Enum.TextXAlignment.Center,
+	AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(150, 24), Size = UDim2.fromOffset(48, 48),
+})
+local compassText = label(compass, {
+	Text = "", TextSize = 18, TextColor3 = YELLOW, TextStrokeTransparency = 0.2, TextXAlignment = Enum.TextXAlignment.Center,
+	Position = UDim2.fromOffset(0, 48), Size = UDim2.new(1, 0, 0, 20),
+})
+local compassHint = label(compass, {
+	Text = "", Font = Enum.Font.Code, TextSize = 14, TextColor3 = YELLOW, TextStrokeTransparency = 0.3, TextXAlignment = Enum.TextXAlignment.Center,
+	Position = UDim2.fromOffset(0, 70), Size = UDim2.new(1, 0, 0, 16),
+})
+
 RunService.RenderStepped:Connect(function()
 	local char = player.Character
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
-	local target, name = nil, nil
+	local options = {}
 	if hrp and gui.Enabled then
-		target, name = currentTarget(hrp.Position)
+		options = targetOptions(hrp.Position)
 	end
-	if not target then
+	targetCount = #options
+	local key = tostring(stage()) .. "|" .. tostring(player:GetAttribute("Dimension")) .. "|" .. tostring((player:GetAttribute("Carrying") or 0) > 0)
+	if key ~= targetKey then
+		targetKey = key
+		targetChoice = 1
+	end
+	if targetChoice > targetCount then
+		targetChoice = 1
+	end
+	local option = options[targetChoice]
+	if not option then
 		marker.Visible = false
+		compass.Visible = false
 		return
 	end
+	local target, name = option.part, option.name
 
 	local cam = workspace.CurrentCamera
-	local size = cam.ViewportSize
 	local point, onScreen = cam:WorldToViewportPoint(target.Position)
 	local distance = math.floor((target.Position - hrp.Position).Magnitude)
 	-- in the Grand Hotel: say how many floors up or down
 	local floors = math.floor((target.Position.Y - hrp.Position.Y) / (workspace:GetAttribute("HotelFloorHeight") or 14) + 0.5)
 	local floorHint = floors > 0 and ("  " .. floors .. (floors == 1 and " FLOOR UP" or " FLOORS UP"))
 		or floors < 0 and ("  " .. -floors .. (floors == -1 and " FLOOR DOWN" or " FLOORS DOWN")) or ""
-	markerText.Text = name .. "  " .. distance .. "m" .. floorHint
-	marker.Visible = true
 
-	if onScreen and point.Z > 0 then
-		diamond.Visible = true
-		arrow.Visible = false
-		marker.Position = UDim2.fromOffset(point.X, point.Y + 16)
-	else
-		-- off-screen: pin to the edge, pointing the way to turn
-		local center = size / 2
-		local dir = Vector2.new(point.X, point.Y) - center
-		if point.Z < 0 then
-			dir = -dir
-		end
-		if dir.Magnitude < 1 then
-			dir = Vector2.new(0, 1)
-		end
-		local margin = Vector2.new(80, 70)
-		local scale = math.min((center.X - margin.X) / math.max(math.abs(dir.X), 1e-3), (center.Y - margin.Y) / math.max(math.abs(dir.Y), 1e-3))
-		local pos = center + dir * scale
-		diamond.Visible = false
-		arrow.Visible = true
-		arrow.Rotation = math.deg(math.atan2(dir.Y, dir.X)) + 90
-		marker.Position = UDim2.fromOffset(pos.X, pos.Y + 16)
+	-- the diamond on the target itself, when it's on screen
+	marker.Visible = onScreen and point.Z > 0
+	diamond.Visible = true
+	arrow.Visible = false
+	markerText.Text = name .. "  " .. distance .. "m"
+	marker.Position = UDim2.fromOffset(point.X, point.Y + 16)
+
+	-- the compass: angle between where the camera looks and where the target is (flat)
+	local look = cam.CFrame.LookVector
+	local flatLook = Vector3.new(look.X, 0, look.Z)
+	local to = target.Position - hrp.Position
+	local flatTo = Vector3.new(to.X, 0, to.Z)
+	local angle = 0
+	if flatLook.Magnitude > 0.01 and flatTo.Magnitude > 0.5 then
+		flatLook, flatTo = flatLook.Unit, flatTo.Unit
+		angle = math.deg(math.atan2(flatLook:Cross(flatTo).Y, flatLook:Dot(flatTo))) -- + = to the left
+	end
+	compassArrow.Rotation = -angle
+	local turn = (math.abs(angle) < 25 and "AHEAD") or (math.abs(angle) > 140 and "BEHIND YOU")
+		or (angle > 0 and "TURN LEFT") or "TURN RIGHT"
+	compassText.Text = name .. "  " .. distance .. "m  " .. turn .. floorHint
+	compassHint.Text = targetCount > 1 and ("TARGET " .. targetChoice .. "/" .. targetCount .. " - " .. (IS_TOUCH and "tap TARGET" or "press Y") .. " to switch") or ""
+	-- below the tutorial card while it is on screen
+	compass.Position = UDim2.new(0.5, 0, 0, player:GetAttribute("TutorialActive") and 230 or 40)
+	compass.Visible = true
+end)
+
+-- TARGET (Y / D-pad right / touch) and CAMERA (C / touch): small buttons above the touch pad
+local smallPad = Instance.new("Frame")
+smallPad.AnchorPoint = Vector2.new(1, 1)
+smallPad.Position = touchPad.Position - UDim2.fromOffset(0, 86)
+smallPad.Size = UDim2.fromOffset(2 * 96 + 10, 44)
+smallPad.BackgroundTransparency = 1
+smallPad.Visible = IS_TOUCH
+smallPad.Parent = gui
+local smallList = Instance.new("UIListLayout")
+smallList.FillDirection = Enum.FillDirection.Horizontal
+smallList.HorizontalAlignment = Enum.HorizontalAlignment.Right
+smallList.Padding = UDim.new(0, 10)
+smallList.SortOrder = Enum.SortOrder.LayoutOrder
+smallList.Parent = smallPad
+local function smallButton(order, text, color)
+	local b = button(smallPad, text, { Size = UDim2.fromOffset(96, 44), TextSize = 16, TextColor3 = color, BackgroundTransparency = 0.2, LayoutOrder = order })
+	b:FindFirstChildOfClass("UIStroke").Color = color
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 10)
+	corner.Parent = b
+	return b
+end
+local cameraButton = smallButton(1, "CAMERA", AMBER)
+local targetButton = smallButton(2, "TARGET", YELLOW)
+cameraButton.Name, targetButton.Name = "CameraButton", "TargetButton"
+
+-- swing the camera behind your character (keeps the zoom)
+local function recenterCamera()
+	local char = player.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	local cam = workspace.CurrentCamera
+	if not hrp or not canAct() then
+		return
+	end
+	local focus = hrp.Position + Vector3.new(0, 1.5, 0)
+	local dist = math.clamp((cam.CFrame.Position - cam.Focus.Position).Magnitude, 6, 40)
+	local look = hrp.CFrame.LookVector
+	local flat = Vector3.new(look.X, 0, look.Z)
+	flat = flat.Magnitude > 0.01 and flat.Unit or Vector3.new(0, 0, -1)
+	cam.CFrame = CFrame.lookAt(focus - flat * dist + Vector3.new(0, dist * 0.35, 0), focus)
+end
+
+cameraButton.Activated:Connect(recenterCamera)
+targetButton.Activated:Connect(function()
+	if canAct() then
+		cycleTarget()
 	end
 end)
+ContextActionService:BindAction("S85_Target", function(_, inputState)
+	if inputState == Enum.UserInputState.Begin and canAct() then
+		cycleTarget()
+	end
+	return Enum.ContextActionResult.Pass
+end, false, Enum.KeyCode.Y, Enum.KeyCode.DPadRight)
+ContextActionService:BindAction("S85_Camera", function(_, inputState)
+	if inputState == Enum.UserInputState.Begin then
+		recenterCamera()
+	end
+	return Enum.ContextActionResult.Pass
+end, false, Enum.KeyCode.C)
+end -- compass / TARGET / CAMERA
 
 ---------------------------------------------------------------------------
 -- Grand Hotel: FLOOR label, a shoulder flashlight indoors, flickering
@@ -1555,6 +1995,9 @@ local function mirrorScare()
 end
 
 local lastFloor = nil
+local indoorCamera = false
+local INDOOR_ZOOM = 16
+local outdoorZoom = player.CameraMaxZoomDistance
 RunService.Heartbeat:Connect(function()
 	local char = player.Character
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -1563,15 +2006,31 @@ RunService.Heartbeat:Connect(function()
 		return
 	end
 	local floor = hotelFloor(hrp.Position)
+	if not floor and inSite2(hrp.Position) then
+		floor = 0 -- Site 2, under the hotel (Chapter 4): indoors, like a hotel floor
+	end
 
 	-- the panel's WORLD line shows the hotel floor
 	if floor ~= lastFloor then
 		lastFloor = floor
-		if floor then
+		if floor == 0 then
+			worldLabel.Text = "SITE 2 - LOWBAND, 1958"
+		elseif floor then
 			worldLabel.Text = (floor == 6 and "GRAND HOTEL - ROOF") or ("GRAND HOTEL - FLOOR " .. floor)
 		else
 			refreshWorld()
 		end
+	end
+
+	-- indoors (task 012): walls between the camera and you turn see-through instead of pushing
+	-- the camera into your face, and the camera stays closer so it fits in the rooms
+	local inside = floor ~= nil and floor < 6
+	if inside ~= indoorCamera then
+		indoorCamera = inside
+		pcall(function()
+			player.DevCameraOcclusionMode = inside and Enum.DevCameraOcclusionMode.Invisicam or Enum.DevCameraOcclusionMode.Zoom
+			player.CameraMaxZoomDistance = inside and INDOOR_ZOOM or outdoorZoom
+		end)
 	end
 
 	-- flashlight on your shoulder while inside
@@ -1597,14 +2056,17 @@ task.spawn(function()
 			lastScan = os.clock()
 			flickers = {}
 			for _, d in ipairs(workspace:GetDescendants()) do
-				if d.Name == "HotelFlicker" and d:IsA("BasePart") then
+				if (d.Name == "HotelFlicker" or d.Name == "HotelElevatorPanel") and d:IsA("BasePart") then
 					table.insert(flickers, d)
 				end
 			end
 		end
 		if graphics >= 2 then
 			for _, p in ipairs(flickers) do
-				if p.Parent and p.Material == Enum.Material.Neon then
+				if p.Name == "HotelElevatorPanel" then
+					-- stuck elevators (Chapter 2 / 3): the red panel flickers; working ones stay lit
+					p.Transparency = (p:GetAttribute("Flicker") and math.random() < 0.3) and 0.7 or 0
+				elseif p.Parent and p.Material == Enum.Material.Neon then
 					local l = p:FindFirstChildOfClass("PointLight")
 					local off = math.random() < 0.08
 					p.Transparency = off and 0.8 or 0

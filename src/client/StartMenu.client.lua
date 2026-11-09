@@ -361,6 +361,53 @@ local PICTURES = {
 		end
 		return m
 	end,
+	-- Chapter 4
+	keycard = function()
+		local m = Instance.new("Model")
+		part(m, { Size = Vector3.new(3.2, 0.3, 2), Color = Color3.fromRGB(120, 255, 160), Material = Enum.Material.Neon, CFrame = CFrame.Angles(0.6, 0.3, 0) })
+		part(m, { Size = Vector3.new(0.9, 0.32, 0.5), Color = Color3.fromRGB(30, 30, 34), Material = Enum.Material.SmoothPlastic,
+			CFrame = CFrame.Angles(0.6, 0.3, 0) * CFrame.new(-0.8, 0, -0.4) })
+		return m
+	end,
+	door = function()
+		local m = Instance.new("Model")
+		part(m, { Size = Vector3.new(5, 9, 0.4), Color = Color3.fromRGB(90, 96, 104), Material = Enum.Material.DiamondPlate, CFrame = CFrame.new() })
+		for i = 0, 3 do
+			part(m, { Size = Vector3.new(0.7, 0.5, 0.3), Color = i < 2 and Color3.fromRGB(120, 255, 160) or RED, Material = Enum.Material.Neon,
+				CFrame = CFrame.new(-1.8 + i * 1.2, 2, -0.3) })
+		end
+		for _, x in ipairs({ -3.6, 3.6 }) do -- broken tiles on each side
+			part(m, { Size = Vector3.new(2, 9, 0.3), Color = Color3.fromRGB(225, 228, 230), Material = Enum.Material.Marble, CFrame = CFrame.new(x, 0, 0) })
+		end
+		return m
+	end,
+	pylon = function()
+		local m = Instance.new("Model")
+		local purple = Color3.fromRGB(170, 90, 255)
+		part(m, { Shape = Enum.PartType.Cylinder, Size = Vector3.new(1.2, 7, 7), Color = Color3.fromRGB(60, 62, 60), Material = Enum.Material.Metal,
+			CFrame = CFrame.Angles(0, 0, math.rad(90)) })
+		part(m, { Size = Vector3.new(2.2, 9, 2.2), Color = purple, Material = Enum.Material.Neon, CFrame = CFrame.new(0, 5, 0) })
+		for k = 1, 3 do
+			part(m, { Shape = Enum.PartType.Cylinder, Size = Vector3.new(0.4, 5, 5), Color = Color3.fromRGB(70, 60, 90), Material = Enum.Material.Metal,
+				CFrame = CFrame.new(0, 1.4 + k * 2.6, 0) * CFrame.Angles(0, 0, math.rad(90)) })
+		end
+		return m
+	end,
+	echo = function()
+		local m = Instance.new("Model")
+		local shade, purple = Color3.fromRGB(26, 20, 36), Color3.fromRGB(170, 90, 255)
+		part(m, { Size = Vector3.new(2.2, 2.4, 1.2), Color = shade, Material = Enum.Material.SmoothPlastic, CFrame = CFrame.new() })
+		part(m, { Size = Vector3.new(1.5, 1.4, 1.4), Color = shade, Material = Enum.Material.SmoothPlastic, CFrame = CFrame.new(0, 2, 0) })
+		part(m, { Size = Vector3.new(1.6, 0.3, 0.2), Color = purple, Material = Enum.Material.Neon, CFrame = CFrame.new(0, 2.1, -0.72) })
+		for _, side in ipairs({ -1, 1 }) do
+			part(m, { Size = Vector3.new(1, 0.5, 1.3), Color = purple, Material = Enum.Material.Neon, CFrame = CFrame.new(side * 1.5, 1.1, 0) })
+			part(m, { Size = Vector3.new(0.6, 2.2, 0.6), Color = shade, Material = Enum.Material.SmoothPlastic, CFrame = CFrame.new(side * 1.5, -0.3, 0) })
+			part(m, { Size = Vector3.new(0.8, 2.4, 0.8), Color = shade, Material = Enum.Material.SmoothPlastic, CFrame = CFrame.new(side * 0.55, -2.4, 0) })
+		end
+		part(m, { Size = Vector3.new(0.5, 0.5, 1.6), Color = purple, Material = Enum.Material.Neon, CFrame = CFrame.new(1.5, -1, -0.6) })
+		part(m, { Shape = Enum.PartType.Ball, Size = Vector3.one * 0.9, Color = purple, Material = Enum.Material.Neon, CFrame = CFrame.new(1.5, -1, -4) })
+		return m
+	end,
 	marker = function()
 		local m = Instance.new("Model")
 		part(m, { Size = Vector3.new(3, 3, 0.4), Color = YELLOW, Material = Enum.Material.Neon, CFrame = CFrame.Angles(0, 0, math.rad(45)) })
@@ -444,10 +491,20 @@ local BRIEFINGS = {
 			{ "hound", "WATCH OUT", RED, "STATIC HOUNDS hunt in packs and run faster than a robot. Shoot them, or switch to car mode to escape." },
 		},
 	},
+	[4] = {
+		goal = "Find the keycards, open Site 2 under the Grand Hotel, destroy the Echo Pylons and play the tape.",
+		cards = {
+			{ "keycard", "1. FIND x4", Color3.fromRGB(120, 255, 160), "Green KEYCARDS in the Grand Hotel: room 302 and the roof here; room 209 and behind reception in its Undergrid copy." },
+			{ "door", "2. OPEN", AMBER, "The STEEL DOOR behind the cracked tiles in the ground floor MEN'S WASHROOM. With 4 cards it takes you down to SITE 2." },
+			{ "pylon", "3. DESTROY x4", Color3.fromRGB(170, 90, 255), "The purple ECHO PYLONS in Site 2's four chambers. Then the vault opens: PLAY THE TAPE in the deep room." },
+			{ "echo", "WATCH OUT", RED, "ECHOES copy Shiftframes and SHOOT BACK. Their purple bolts are slow: move sideways and use walls as cover." },
+		},
+	},
 }
 
 local function stageName(stage)
-	return ({ Shards = "Collecting shards", Nodes = "Hive Nodes", Boss = "Mind Warden", Files = "LOWBAND files", Relays = "Power relays", Carrier = "Defend the Carrier", Complete = "Complete" })[stage] or tostring(stage)
+	return ({ Shards = "Collecting shards", Nodes = "Hive Nodes", Boss = "Mind Warden", Files = "LOWBAND files", Relays = "Power relays", Carrier = "Defend the Carrier", Complete = "Complete",
+		Keycards = "Keycards", Pylons = "Echo Pylons", Tape = "The tape" })[stage] or tostring(stage)
 end
 
 local function timeAgo(seconds)
@@ -514,6 +571,16 @@ local function refreshSummary()
 	end
 	if summary.autoAim ~= nil then
 		player:SetAttribute("AutoAim", summary.autoAim)
+	end
+	-- task 011 settings (Signal85Client reads them; SoundVolume is for the sounds of Phase B)
+	if summary.hudSize then
+		player:SetAttribute("HudSize", summary.hudSize)
+	end
+	if summary.damageNumbers ~= nil then
+		player:SetAttribute("DamageNumbers", summary.damageNumbers)
+	end
+	if summary.volume then
+		player:SetAttribute("SoundVolume", summary.volume)
 	end
 end
 
@@ -661,6 +728,18 @@ showShop = function(state)
 
 	local order = 5
 	if shopTab == "weapons" then
+		-- task 012: refill every gun you own (the free refill only gives half)
+		if state.ammoPrice then
+			local spare = player:GetAttribute("AmmoSpare")
+			shopRow(order, Color3.fromRGB(255, 170, 40), "AMMO REFILL",
+				"Fills every gun you own. Free ammo (drops, and half a refill every 20 min) is only for the Pulse Cannon.",
+				spare and ("YOUR " .. tostring(player:GetAttribute("WeaponName") or "GUN") .. ": " .. tostring(player:GetAttribute("Ammo") or 0)
+					.. " + SPARE " .. spare) or nil,
+				"BUY " .. state.ammoPrice, state.scrap >= state.ammoPrice and YELLOW or DIM, function()
+					showShop(shopCall("ammo"))
+				end)
+			order = order + 1
+		end
 		for _, w in ipairs(state.weapons) do
 			local owned = state.owned[w.id]
 			local equipped = state.weapon == w.id
@@ -810,54 +889,89 @@ showCharacter = function(onDone)
 	render()
 end
 
--- SETTINGS: graphics quality and camera shake (Signal85Client applies them; the server saves them)
+-- SETTINGS: graphics, camera shake, auto-aim, HUD size, damage numbers, volume, replay tutorial
+-- (Signal85Client applies them; the server saves them)
+local settingsScroll = Vector2.zero
 local function showSettings()
 	clearScreen()
 	text(panel, { Text = "SETTINGS", TextSize = 34, TextColor3 = RED, LayoutOrder = 1 })
 
-	local current = player:GetAttribute("GraphicsQuality") or (IS_PHONE and 2 or 3)
-	text(panel, { Text = "GRAPHICS", TextSize = 22, LayoutOrder = 2 })
-	text(panel, { Text = "LOW is smoothest on older phones. HIGH has sun rays, more glow and particles.", Font = Enum.Font.Code, TextSize = 15, TextColor3 = DIM, LayoutOrder = 3 })
-	local row = make("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 52), LayoutOrder = 4 }, panel)
-	list(row, 10, true)
-	for q, name in ipairs({ "LOW", "MEDIUM", "HIGH" }) do
-		local b = button(row, name, q == current and GREEN or DIM, function()
+	-- everything scrolls (it is taller than a phone screen); the scroll position is kept on each change
+	local area = make("ScrollingFrame", {
+		BackgroundTransparency = 1, BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, SMALL_SCREEN and 320 or 440), LayoutOrder = 2,
+		CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollBarThickness = 8, ScrollBarImageColor3 = AMBER,
+		ScrollingDirection = Enum.ScrollingDirection.Y, CanvasPosition = settingsScroll,
+	}, panel)
+	list(area, 8).VerticalAlignment = Enum.VerticalAlignment.Top
+	area:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
+		settingsScroll = area.CanvasPosition
+	end)
+	local order = 0
+	-- a heading, a line of help, and a row of choices (the current one green)
+	local function option(title, help, choices, current, pick)
+		order = order + 1
+		text(area, { Text = title, TextSize = 22, LayoutOrder = order })
+		if help then
+			order = order + 1
+			text(area, { Text = help, Font = Enum.Font.Code, TextSize = 15, TextColor3 = DIM, LayoutOrder = order })
+		end
+		order = order + 1
+		local row = make("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 52), LayoutOrder = order }, area)
+		list(row, 10, true)
+		for i, choice in ipairs(choices) do
+			local b = button(row, choice[1], choice[2] == current and GREEN or DIM, function()
+				pick(choice[2])
+				showSettings()
+			end, i)
+			b.Size = UDim2.fromOffset(#choices > 3 and 70 or 150, 48)
+		end
+	end
+
+	option("GRAPHICS", "LOW is smoothest on older phones. HIGH has sun rays, more glow and particles.",
+		{ { "LOW", 1 }, { "MEDIUM", 2 }, { "HIGH", 3 } }, player:GetAttribute("GraphicsQuality") or (IS_PHONE and 2 or 3), function(q)
 			player:SetAttribute("GraphicsQuality", q)
 			SettingsEvent:FireServer("graphics", q)
-			showSettings()
-		end, q)
-		b.Size = UDim2.fromOffset(150, 48)
-	end
-
-	local shakeOn = player:GetAttribute("CameraShake") ~= false
-	text(panel, { Text = "CAMERA SHAKE", TextSize = 22, LayoutOrder = 5 })
-	local shakeRow = make("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 52), LayoutOrder = 6 }, panel)
-	list(shakeRow, 10, true)
-	for i, on in ipairs({ true, false }) do
-		local b = button(shakeRow, on and "ON" or "OFF", on == shakeOn and GREEN or DIM, function()
-			player:SetAttribute("CameraShake", on)
-			SettingsEvent:FireServer("shake", on)
-			showSettings()
-		end, i)
-		b.Size = UDim2.fromOffset(150, 48)
-	end
-
-	local autoOn = player:GetAttribute("AutoAim") ~= false
-	text(panel, { Text = "AUTO-AIM", TextSize = 22, LayoutOrder = 7 })
-	text(panel, { Text = "ON: Q / BLAST shoot the nearest enemy (red ring) by themselves - no mouse needed.", Font = Enum.Font.Code,
-		TextSize = 15, TextColor3 = DIM, LayoutOrder = 8 })
-	local aimRow = make("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 52), LayoutOrder = 9 }, panel)
-	list(aimRow, 10, true)
-	for i, on in ipairs({ true, false }) do
-		local b = button(aimRow, on and "ON" or "OFF", on == autoOn and GREEN or DIM, function()
+		end)
+	option("CAMERA SHAKE", nil, { { "ON", true }, { "OFF", false } }, player:GetAttribute("CameraShake") ~= false, function(on)
+		player:SetAttribute("CameraShake", on)
+		SettingsEvent:FireServer("shake", on)
+	end)
+	option("AUTO-AIM", "ON: Q / BLAST shoot the nearest enemy (red ring) by themselves - no mouse needed.",
+		{ { "ON", true }, { "OFF", false } }, player:GetAttribute("AutoAim") ~= false, function(on)
 			player:SetAttribute("AutoAim", on)
 			SettingsEvent:FireServer("autoaim", on)
-			showSettings()
-		end, i)
-		b.Size = UDim2.fromOffset(150, 48)
-	end
+		end)
+	option("HUD SIZE", "Size of the panel and objective box on the left.", { { "SMALL", 1 }, { "NORMAL", 2 }, { "LARGE", 3 } },
+		player:GetAttribute("HudSize") or 2, function(size)
+			player:SetAttribute("HudSize", size)
+			SettingsEvent:FireServer("hud", size)
+		end)
+	option("DAMAGE NUMBERS", "The numbers that float up when you hit an enemy.", { { "ON", true }, { "OFF", false } },
+		player:GetAttribute("DamageNumbers") ~= false, function(on)
+			player:SetAttribute("DamageNumbers", on)
+			SettingsEvent:FireServer("numbers", on)
+		end)
+	local volume = player:GetAttribute("SoundVolume") or 8
+	option("SOUND VOLUME: " .. volume .. " / 10", "Music and sound effects arrive in a later update.",
+		{ { "0", 0 }, { "-", math.max(volume - 1, 0) }, { "+", math.min(volume + 1, 10) }, { "10", 10 } }, -1, function(v)
+			player:SetAttribute("SoundVolume", v)
+			SettingsEvent:FireServer("volume", v)
+		end)
+
+	order = order + 1
+	button(area, "REPLAY TUTORIAL", CYAN, function()
+		if not inGame then
+			showToast("START THE GAME FIRST, THEN REPLAY IT FROM HERE", RED)
+		elseif player:GetAttribute("TutorialActive") then
+			showToast("THE TUTORIAL IS ALREADY RUNNING", RED)
+		else
+			setMenuOpen(false)
+			player:SetAttribute("TutorialStart", true)
+		end
+	end, order)
 
 	button(panel, "BACK", DIM, function()
+		settingsScroll = Vector2.zero
 		showMain()
 	end, 10)
 	setFocus(#buttons)
@@ -923,7 +1037,10 @@ showBriefing = function(chapter)
 		inGame = true
 		setMenuOpen(false)
 		-- once per session: the daily reward pops up if today's box is ready
-		if not dailyChecked then
+		local function checkDaily()
+			if dailyChecked then
+				return
+			end
 			dailyChecked = true
 			task.spawn(function()
 				local status = meta("daily")
@@ -932,6 +1049,20 @@ showBriefing = function(chapter)
 					showDaily(status, true)
 				end
 			end)
+		end
+		-- new players: the "First Night" tutorial (Tutorial script) first, then the daily reward
+		if summary and summary.tutorialDone == false and not player:GetAttribute("TutorialActive") then
+			summary.tutorialDone = true -- offered once per session
+			local conn
+			conn = player:GetAttributeChangedSignal("TutorialActive"):Connect(function()
+				if player:GetAttribute("TutorialActive") == false then
+					conn:Disconnect()
+					checkDaily()
+				end
+			end)
+			player:SetAttribute("TutorialStart", true)
+		else
+			checkDaily()
 		end
 	end, 6)
 	setFocus(1)
@@ -1145,8 +1276,22 @@ showRewards = function()
 	button(panel, "TOP PILOTS", Color3.fromRGB(255, 80, 200), function()
 		showBoard(nil)
 	end, 7)
+	-- Roblox's own invite window (only works in a published game). Friends in the same server: +10% Scrap.
+	button(panel, player:GetAttribute("FriendBonus") and "INVITE FRIENDS (BONUS ON: +10%)" or "INVITE FRIENDS: +10% SCRAP TOGETHER", CYAN, function()
+		local SocialService = game:GetService("SocialService")
+		local ok, can = pcall(function()
+			return SocialService:CanSendGameInviteAsync(player)
+		end)
+		if ok and can then
+			pcall(function()
+				SocialService:PromptGameInvite(player)
+			end)
+		else
+			showToast("INVITES WORK ONCE THE GAME IS PUBLISHED (NOT IN STUDIO)", RED)
+		end
+	end, 8)
 
-	local codeRow = make("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 52), LayoutOrder = 8 }, panel)
+	local codeRow = make("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 52), LayoutOrder = 9 }, panel)
 	list(codeRow, 10, true)
 	local box = make("TextBox", {
 		PlaceholderText = "ENTER A CODE", Text = "", ClearTextOnFocus = false, Font = Enum.Font.Arcade, TextSize = 20,
@@ -1169,7 +1314,7 @@ showRewards = function()
 		else
 			showMain()
 		end
-	end, 9)
+	end, 10)
 	setFocus(1)
 end
 

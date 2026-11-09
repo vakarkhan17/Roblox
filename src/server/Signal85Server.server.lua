@@ -110,6 +110,21 @@ local CONFIG = {
 	MAX_LEVEL = 50,
 	LEADERBOARD_REFRESH = 120,   -- seconds
 	CODES = { SIGNAL85 = 250, HOLLOWCREEK = 150 }, -- code = Scrap; each works once per player. Add more here.
+
+	-- friends and co-op (task 011)
+	TUTORIAL_SCRAP = 100,        -- for finishing the "First Night" tutorial (once)
+	DOWN_TIME = 15,              -- seconds a downed player waits for a revive (only when someone else is playing)
+	REVIVE_HOLD = 3,             -- seconds to hold E / tap to revive
+	SCRAP_REVIVE = 15,
+	PING_COOLDOWN = 2,
+	FRIEND_BONUS = 0.1,          -- +10% gameplay Scrap while a Roblox friend is in the same server
+
+	-- firepower (task 012): magazines, reload and spare ammo are per weapon (WEAPONS: mag, reserve, reload)
+	AMMO_REFILL_TIME = 1200,     -- seconds between free refills (half of full ammo)...
+	AMMO_REFILL_TIME_NEW = 600,  -- ...or this for pilots below level 5
+	AMMO_REFILL_FRACTION = 0.5,  -- the free refill tops every gun up to this part of full
+	AMMO_REFILL_PRICE = 40,      -- Scrap for a full refill of every gun you own (Garage / shop)
+	AMMO_DROP_CHANCE = 0.15,     -- a defeated creature drops a spare magazine this often
 }
 
 -- Weapons (robot mode). Bought with Scrap in the shop; one is equipped.
@@ -135,14 +150,21 @@ WEAPONS.baton = { name = "SHOCK BATON", price = 0, damage = 55, cooldown = 0.45,
 	splash = 0, splashFrac = 0, pierce = 1, bossMult = 1, width = 0, color = Color3.fromRGB(255, 240, 120),
 	desc = "Free. Close range: zaps every enemy in front of you, even through walls." }
 local WEAPON_ORDER = { "pulse", "baton", "arc", "scatter", "lance" }
+-- firepower: shots per magazine, spare shots you can carry, reload seconds (the baton never runs out)
+WEAPONS.pulse.mag, WEAPONS.pulse.reserve, WEAPONS.pulse.reload = 20, 120, 1.6
+WEAPONS.arc.mag, WEAPONS.arc.reserve, WEAPONS.arc.reload = 40, 240, 1.8
+WEAPONS.scatter.mag, WEAPONS.scatter.reserve, WEAPONS.scatter.reload = 6, 36, 2
+WEAPONS.lance.mag, WEAPONS.lance.reserve, WEAPONS.lance.reload = 4, 20, 2.2
 
 -- Upgrades: permanent, 3 levels each
 local UPGRADES = {
 	armor = { name = "ARMOR PLATING", prices = { 150, 300, 500 }, desc = "+25 max health per level." },
 	turbo = { name = "TURBO", prices = { 150, 300, 500 }, desc = "+10% car speed per level." },
 	shield = { name = "SHIELD CAPACITOR", prices = { 100, 200, 350 }, desc = "+2 s rift shield per level." },
+	mag = { name = "BIGGER MAGAZINE", prices = { 200, 400, 700 }, desc = "+25% shots per magazine per level." },
+	reload = { name = "FAST RELOAD", prices = { 150, 300, 500 }, desc = "-15% reload time per level." },
 }
-local UPGRADE_ORDER = { "armor", "turbo", "shield" }
+local UPGRADE_ORDER = { "armor", "turbo", "shield", "mag", "reload" }
 
 local rng = Random.new()
 
@@ -190,6 +212,10 @@ local MetaFunction = makeFunction("Meta")               -- client -> server: "da
 -- defined in the "Reasons to come back" section (task 010), used all over the game
 local track     -- (player, kind, amount): lifetime counts, daily quests, achievements
 local trackDoor -- (player, door): a hotel room door was opened
+local hurtPlayer -- (player, humanoid, damage): damage that can put a player DOWN instead of killing them (task 011)
+local PingEvent = makeRemote("Ping")                    -- client -> server: world position; server -> all: position, kind, name
+-- firepower (task 012), defined in the "Firepower" section
+local useAmmo, pushAmmo, dropAmmo, refillAmmo -- (player, weapon) -> may fire / (player) / (position) / (player, fraction)
 
 -- shared world state (see the Chapters section)
 ReplicatedStorage:SetAttribute("Chapter", 1)
@@ -1231,6 +1257,13 @@ for _, model in ipairs({ town:FindFirstChild("GrandHotel"), undergrid:FindFirstC
 		elseif d:IsA("ProximityPrompt") and d.Name == "HotelElevator" then
 			table.insert(hotelElevatorPrompts, d)
 			d.Triggered:Connect(function(player)
+				local stuck = d:GetAttribute("Stuck")
+				if stuck then
+					-- Chapter 2 / 3: the prompt stays, so players know there IS an elevator and why it's out
+					NotifyEvent:FireClient(player, stuck == "hive" and "ELEVATOR STUCK - HIVE GROWTH IN THE SHAFT. TAKE THE STAIRS"
+						or "ELEVATOR HAS NO POWER. TAKE THE STAIRS", Color3.fromRGB(255, 60, 70))
+					return
+				end
 				local _, world = hotelLocal(d.Parent.Position)
 				elevatorRequests[player] = { side = d:GetAttribute("Side"), world = world, at = os.clock() }
 				ElevatorMenuEvent:FireClient(player, d:GetAttribute("Floor"), HOTEL_FLOORS)
@@ -1278,8 +1311,16 @@ setHotelTheme = function(chapter)
 	shown(hotelThemed.HotelEmergency, powerOut)
 	shown(hotelThemed.HotelHive, chapter == 2)
 	for _, prompt in ipairs(hotelElevatorPrompts) do
-		-- stuck in Chapter 2, no power in Chapter 3: take the grand stairs
-		prompt.Enabled = chapter ~= 2 and chapter ~= 3
+		-- stuck in Chapter 2, no power in Chapter 3: the prompt says so, and the panel turns red
+		local stuck = (chapter == 2 and "hive") or (chapter == 3 and "power") or nil
+		prompt.Enabled = true
+		prompt:SetAttribute("Stuck", stuck)
+		prompt.ActionText = stuck == "hive" and "Elevator stuck" or stuck == "power" and "No power" or "Use elevator"
+		local panel = prompt.Parent
+		if panel and panel:IsA("BasePart") then
+			panel.Color = stuck and Color3.fromRGB(255, 50, 60) or Color3.fromRGB(60, 255, 140)
+			panel:SetAttribute("Flicker", stuck ~= nil) -- the client flickers stuck panels
+		end
 	end
 end
 end -- hotel runtime section
@@ -2094,6 +2135,9 @@ local function damageCreature(m, amount, attacker)
 	m:SetAttribute("Health", m:GetAttribute("Health") - amount)
 	updateHealthBar(m)
 	if m:GetAttribute("Health") <= 0 then
+		if m.PrimaryPart then
+			dropAmmo(m.PrimaryPart.Position) -- sometimes a spare magazine (task 012)
+		end
 		killCreature(m)
 		if attacker then
 			awardScrap(attacker, data.reward, m.Name == "StaticHound" and "STATIC HOUND" or "HOLLOWER")
@@ -2120,7 +2164,7 @@ local function playersInUndergrid()
 		local char = plr.Character
 		local hrp = char and char:FindFirstChild("HumanoidRootPart")
 		local hum = char and char:FindFirstChildOfClass("Humanoid")
-		if plr:GetAttribute("Dimension") == "Undergrid" and hrp and hum and hum.Health > 0 then
+		if plr:GetAttribute("Dimension") == "Undergrid" and hrp and hum and hum.Health > 0 and not char:GetAttribute("Downed") then
 			table.insert(list, { plr = plr, hrp = hrp, hum = hum })
 		end
 	end
@@ -2136,14 +2180,15 @@ RunService.Heartbeat:Connect(function(dt)
 		if m.Parent and m.PrimaryPart then
 			local root = m.PrimaryPart.Position
 			local best, bestDist = nil, CONFIG.CREATURE_AGGRO
-			for _, t in ipairs(targets) do
+			-- chapter modules can give a creature its own target list (Echoes hunt inside Site 2)
+			for _, t in ipairs(data.targets and data.targets() or targets) do
 				local d = (t.hrp.Position - root).Magnitude
 				if d < bestDist then
 					best, bestDist = t, d
 				end
 			end
 			local goingForCarrier = false
-			if carrierTarget and carrierTarget.Parent then
+			if carrierTarget and carrierTarget.Parent and not data.targets then
 				local d = (carrierTarget.Position - root).Magnitude
 				if d < bestDist + 25 then -- they prefer the Carrier unless a player is much closer
 					best, bestDist, goingForCarrier = { hrp = carrierTarget }, d, true
@@ -2156,7 +2201,8 @@ RunService.Heartbeat:Connect(function(dt)
 			if best then
 				local flat = Vector3.new(best.hrp.Position.X, root.Y, best.hrp.Position.Z)
 				local delta = flat - root
-				local stopAt = goingForCarrier and 7 or 3.5
+				-- ranged creatures (Echoes) keep their distance: data.stopAt(m, target) -> studs
+				local stopAt = goingForCarrier and 7 or (data.stopAt and data.stopAt(m, best)) or 3.5
 				local newPos = root
 				if delta.Magnitude > stopAt then
 					newPos = root + delta.Unit * math.min(data.speed * dt, delta.Magnitude - stopAt)
@@ -2176,10 +2222,15 @@ RunService.Heartbeat:Connect(function(dt)
 					if goingForCarrier and reach < 10 then
 						data.lastHit = now
 						damageCarrier(data.damage)
+					elseif data.attack then
+						-- ranged creatures shoot: data.attack(m, target) -> true when it fired
+						if data.attack(m, best) then
+							data.lastHit = now
+						end
 					elseif not goingForCarrier and (best.hrp.Position - m.PrimaryPart.Position).Magnitude < 6.5 then
 						-- TakeDamage does nothing while the player has the rift shield (ForceField)
 						data.lastHit = now
-						best.hum:TakeDamage(data.damage)
+						hurtPlayer(best.plr, best.hum, data.damage)
 					end
 				end
 			else
@@ -2335,6 +2386,7 @@ local function applyLoadout(player)
 	player:SetAttribute("XP", into)
 	player:SetAttribute("XPNeed", need)
 	player:SetAttribute("Title", level >= 20 and "VETERAN" or nil)
+	pushAmmo(player) -- the equipped weapon's ammo for the HUD
 	local weapon = equippedWeapon(player)
 	player:SetAttribute("Weapon", profile.weapon)
 	player:SetAttribute("WeaponName", weapon.name)
@@ -2362,6 +2414,9 @@ awardScrap = function(player, amount, reason, plain)
 		if isWeekend() then
 			amount = amount * 2
 			reason = reason .. " 2x"
+		end
+		if player:GetAttribute("FriendBonus") then
+			amount = math.ceil(amount * (1 + CONFIG.FRIEND_BONUS)) -- playing with a friend (task 011)
 		end
 		addXp(player, amount)
 	end
@@ -2434,10 +2489,13 @@ local function loadProfile(player)
 		lastWrite = 0, queued = false, lastManual = -math.huge, lastChoose = -math.huge,
 		reason = saveStore == nil and "NOT PUBLISHED" or nil, -- why saving is unavailable, shown in the menu
 		-- shop
-		scrap = 0, owned = { pulse = true, baton = true }, weapon = "pulse", upgrades = { armor = 0, turbo = 0, shield = 0 },
+		scrap = 0, owned = { pulse = true, baton = true }, weapon = "pulse", upgrades = { armor = 0, turbo = 0, shield = 0, mag = 0, reload = 0 },
+		ammo = {}, refillAt = nil, -- task 012: [weapon id] = { mag, spare }; os.time() of the next free refill
 		-- task 010: XP, daily streak, quests, achievements, lifetime counts, used codes, paint unlocks
 		xp = 0, streak = 0, lastClaimDay = nil, quests = nil, achievements = {}, counts = {}, codes = {}, gold = false,
 		doorFloors = {}, -- this session only: doors opened per hotel floor (ROOM SERVICE)
+		-- task 011: tutorial and the new settings
+		tutorialDone = false, volume = nil, hudSize = nil, damageNumbers = nil,
 	}
 	profiles[player] = profile
 	applyLoadout(player)
@@ -2461,6 +2519,30 @@ local function loadProfile(player)
 			end
 			if typeof(data.autoAim) == "boolean" then
 				profile.autoAim = data.autoAim
+			end
+			-- task 012: ammo left per weapon (missing = full) and the next free refill
+			if type(data.ammo) == "table" then
+				for id, a in pairs(data.ammo) do
+					local w = WEAPONS[id]
+					if w and w.mag and type(a) == "table" and tonumber(a.mag) and tonumber(a.spare) then
+						profile.ammo[id] = {
+							mag = math.clamp(math.floor(a.mag), 0, w.mag * 2),
+							spare = math.clamp(math.floor(a.spare), 0, w.reserve),
+						}
+					end
+				end
+			end
+			profile.refillAt = tonumber(data.refillAt)
+			-- task 011: anyone with a save from before the tutorial existed already knows how to play
+			profile.tutorialDone = data.tutorialDone ~= false
+			if tonumber(data.volume) then
+				profile.volume = math.clamp(math.floor(data.volume), 0, 10)
+			end
+			if data.hudSize == 1 or data.hudSize == 2 or data.hudSize == 3 then
+				profile.hudSize = data.hudSize
+			end
+			if typeof(data.damageNumbers) == "boolean" then
+				profile.damageNumbers = data.damageNumbers
 			end
 			profile.look = validLook(data.look)
 			local stats = player:FindFirstChild("leaderstats")
@@ -2535,6 +2617,8 @@ local function snapshot()
 		chapter, stage, progress = 2, "Nodes", 0 -- already on the way to Chapter 2
 	elseif chapter == 2 and stage == "Complete" then
 		chapter, stage, progress = 3, "Files", 0 -- already on the way to Chapter 3
+	elseif chapter == 3 and stage == "Complete" then
+		chapter, stage, progress = 4, "Keycards", 0 -- already on the way to Chapter 4
 	end
 	return chapter, stage, progress
 end
@@ -2558,6 +2642,12 @@ local function writeSave(player)
 		graphics = profile.graphics,
 		shake = profile.shake,
 		autoAim = profile.autoAim,
+		tutorialDone = profile.tutorialDone,
+		ammo = profile.ammo,
+		refillAt = profile.refillAt,
+		volume = profile.volume,
+		hudSize = profile.hudSize,
+		damageNumbers = profile.damageNumbers,
 		look = profile.look,
 		introSeen = true,
 		savedAt = os.time(),
@@ -2658,6 +2748,8 @@ local ACHIEVEMENTS = {
 	{ id = "sealed", name = "SEALED", hint = "Finish Chapter 1", count = "chapter1", goal = 1, reward = 100 },
 	{ id = "warden", name = "WARDEN BREAKER", hint = "Defeat the Mind Warden", count = "chapter2", goal = 1, reward = 250 },
 	{ id = "nightshift", name = "NIGHT SHIFT", hint = "Finish Chapter 3", count = "chapter3", goal = 1, reward = 300 },
+	{ id = "firstnight", name = "FIRST NIGHT", hint = "Finish the tutorial", count = "tutorial", goal = 1, reward = 50 },
+	{ id = "nooneleft", name = "NO ONE LEFT BEHIND", hint = "Revive a teammate", count = "revive", goal = 1, reward = 150 },
 	{ id = "untouched", name = "UNTOUCHED", hint = "Finish a chapter without dying", count = "untouched", goal = 1, reward = 300 },
 	{ id = "loaded", name = "FULLY LOADED", hint = "Own every weapon", reward = 300, check = function(profile)
 		for _, id in ipairs(WEAPON_ORDER) do
@@ -2977,7 +3069,22 @@ MetaFunction.OnServerInvoke = function(player, action, arg)
 	if not profile or not profile.loaded then
 		return { ok = false, message = "STILL LOADING - TRY AGAIN" }
 	end
-	if action == "daily" then
+	if action == "tutorial" then
+		-- "done" (finished: Scrap + FIRST NIGHT once) or "skip"
+		if arg ~= "done" and arg ~= "skip" then
+			return { ok = false, message = "BAD REQUEST" }
+		end
+		local first = not profile.tutorialDone
+		profile.tutorialDone = true
+		if arg == "done" and (profile.counts.tutorial or 0) == 0 then
+			awardScrap(player, CONFIG.TUTORIAL_SCRAP, "TUTORIAL", true)
+			track(player, "tutorial", 1)
+		end
+		if first then
+			queueSave(player)
+		end
+		return { ok = true }
+	elseif action == "daily" then
 		return dailyStatus(profile)
 	elseif action == "claim" then
 		local status = dailyStatus(profile)
@@ -3539,7 +3646,7 @@ local function shockwave(token)
 					hit[t.plr] = true
 					local s = state[t.plr]
 					local vehicle = s and s.mode == "Vehicle"
-					t.hum:TakeDamage(CONFIG.BOSS_SHOCKWAVE_DAMAGE * (vehicle and 0.5 or 1))
+					hurtPlayer(t.plr, t.hum, CONFIG.BOSS_SHOCKWAVE_DAMAGE * (vehicle and 0.5 or 1))
 				end
 			end
 		end
@@ -3677,6 +3784,10 @@ end -- Mind Warden section
 --   Race     take the shutdown code to the radio tower console within RACE_TIME; if late, try again
 --   Walkie-talkie lines from Dot and Ricky go out through RadioEvent.
 ---------------------------------------------------------------------------
+-- (most of this section is inside a do-block: Luau allows 200 locals at the top level)
+local radioLater, FILES, fileFolder, relays, spawnFile, clearChapter3 -- used outside the section
+local startRelays, startCarrierStage, startRace -- defined below
+do
 local LOWBAND_YELLOW = Color3.fromRGB(255, 220, 120)
 local CARRIER_PINK = Color3.fromRGB(255, 120, 200)
 
@@ -3685,7 +3796,7 @@ local function radio(speaker, text)
 end
 
 -- radio lines that wait a bit, and are dropped if the chapter changed meanwhile
-local function radioLater(seconds, speaker, text)
+radioLater = function(seconds, speaker, text)
 	local token = chapterToken
 	task.delay(seconds, function()
 		if token == chapterToken then
@@ -3695,7 +3806,7 @@ local function radioLater(seconds, speaker, text)
 end
 
 -- the files, in spawn order; world = which side of the rift it lies on
-local FILES = {
+FILES = {
 	{ offset = Vector3.new(-26, 0, -22), world = "Town" },
 	{ offset = Vector3.new(22, 0, -24), world = "Undergrid" },
 	{ offset = Vector3.new(-30, 0, 22), world = "Town" },
@@ -3711,7 +3822,7 @@ local FILE_LINES = {
 	{ "DOT", "Last file: the Carrier must be shut down slowly. It needs power from three relays on the other side." },
 }
 
-local fileFolder = Instance.new("Folder")
+fileFolder = Instance.new("Folder")
 fileFolder.Name = "LowbandFiles"
 fileFolder.Parent = workspace
 
@@ -3723,9 +3834,8 @@ local carrierFolder = Instance.new("Folder")
 carrierFolder.Name = "Carrier"
 carrierFolder.Parent = workspace
 
-local relays = {}    -- [model] = { center, charge, done, pad, top, fill, label, lastSpawn, spawns }
+relays = {}          -- [model] = { center, charge, done, pad, top, fill, label, lastSpawn, spawns }
 local carrier = nil  -- { model, core, hp, maxHp, failed }
-local startRelays, startCarrierStage, startRace -- defined below
 
 -- Files ---------------------------------------------------------------------
 local function collectFile(file, plr)
@@ -3754,7 +3864,7 @@ local function collectFile(file, plr)
 	end
 end
 
-local function spawnFile(index)
+spawnFile = function(index)
 	local f = FILES[index]
 	local world = f.world == "Undergrid" and CONFIG.UNDERGRID_OFFSET or Vector3.zero
 	local base = f.pos or (LAB_CENTER + f.offset + world) -- f.pos: a fixed spot (the hotel penthouse)
@@ -4081,20 +4191,20 @@ chapter3Complete = function(announce)
 			notifyAll("LAST FILE: 'LOWBAND WAS NOT THE FIRST. SITE 2.'", LOWBAND_YELLOW)
 		end
 	end)
-	task.delay(23, function()
+	-- calm for a moment, then Chapter 4 (Site 2, in ServerScriptService.Chapters)
+	task.delay(23 + CONFIG.CHAPTER_PAUSE, function()
 		if token == chapterToken then
-			notifyAll("TO BE CONTINUED IN CHAPTER 4", Color3.fromRGB(255, 214, 140))
+			startChapter(4)
 		end
 	end)
-	-- Calm free roam from here: the creature loop spawns nothing in "Complete".
-	-- TODO: Chapter 4 (Site 2) — add CHAPTERS[4] and call startChapter(4) from here.
 end
 
-local function clearChapter3()
+clearChapter3 = function()
 	fileFolder:ClearAllChildren()
 	clearRelays()
 	clearCarrier()
 end
+end -- Chapter 3 section
 
 ---------------------------------------------------------------------------
 -- Chapter table and startChapter
@@ -4156,8 +4266,68 @@ local CHAPTERS = {
 			end
 		end,
 	},
-	-- TODO: Chapter 4 (Site 2)
+	-- Chapters 4+ live in ModuleScripts (ServerScriptService.Chapters.ChapterN), loaded below
 }
+
+--[[
+	Chapter modules (task 013+). Each ModuleScript "ChapterN" returns function(api) -> def:
+	  def.title, def.start(stageState), def.clear()
+	  optional def.damageTarget(model, amount, player) -> damaged, killed  (models with attribute Target)
+	  optional def.targets() -> { { model = Model, center = Vector3 } }  (for the Shock Baton)
+	They live outside this script so it stays under Luau's 200-locals limit.
+]]
+local chapterHooks = { damage = {}, targets = {} }
+do
+	local api = {
+		CONFIG = CONFIG, WEAPONS = WEAPONS, rng = rng, Players = Players, ReplicatedStorage = ReplicatedStorage,
+		TweenService = TweenService, Debris = Debris, RunService = RunService,
+		remotes = { Notify = NotifyEvent, Radio = RadioEvent },
+		newPart = newPart, sparkBurst = sparkBurst, notifyAll = notifyAll,
+		radioLater = radioLater, setStage = setStage, stageIs = stageIs, checkpoint = checkpoint,
+		token = function()
+			return chapterToken
+		end,
+		setTransitioning = function(on)
+			transitioning = on
+		end,
+		startChapter = function(n, stageState)
+			startChapter(n, stageState)
+		end,
+		awardScrap = awardScrap, awardEveryone = awardEveryone, chapterCleared = chapterCleared, track = track,
+		hurtPlayer = hurtPlayer, sendHome = sendHome, state = state, profiles = profiles,
+		creatures = creatures, creatureFolder = creatureFolder, creatureCount = creatureCount, addHealthBar = addHealthBar,
+		updateHealthBar = updateHealthBar,
+		hasChapter = function(n)
+			return CHAPTERS[n] ~= nil
+		end,
+		spawnCreature = spawnCreature, spawnHoundPack = spawnHoundPack, clearCreatures = clearCreatures,
+		playersInUndergrid = playersInUndergrid,
+		town = town, undergrid = undergrid,
+		hotelSpot = hotelSpot, HOTEL_CENTER = HOTEL_CENTER, HOTEL_FLOORS = HOTEL_FLOORS, HOTEL_FLOOR_H = HOTEL_FLOOR_H,
+		HOTEL_ROOMS = HOTEL_ROOMS, HOTEL_HALF = HOTEL_HALF,
+		colors = { GREEN = GREEN, WARN = WARN, GLOW = GLOW },
+	}
+	local folder = script.Parent:FindFirstChild("Chapters")
+	for _, mod in ipairs(folder and folder:GetChildren() or {}) do
+		local n = mod:IsA("ModuleScript") and tonumber(mod.Name:match("^Chapter(%d+)$"))
+		if n then
+			local ok, def = pcall(function()
+				return require(mod)(api)
+			end)
+			if ok and type(def) == "table" and def.start then
+				CHAPTERS[n] = def
+				if def.damageTarget then
+					table.insert(chapterHooks.damage, def.damageTarget)
+				end
+				if def.targets then
+					table.insert(chapterHooks.targets, def.targets)
+				end
+			else
+				warn("[Chapters] " .. mod.Name .. " failed to load: " .. tostring(def))
+			end
+		end
+	end
+end
 
 --[[
 	startChapter(n, stageState)
@@ -4178,6 +4348,11 @@ startChapter = function(n, stageState)
 	clearNodes()
 	clearBoss()
 	clearChapter3()
+	for _, def in pairs(CHAPTERS) do
+		if def.clear then
+			def.clear() -- chapter modules (4+)
+		end
+	end
 	for _, plr in ipairs(Players:GetPlayers()) do
 		sendHome(plr)
 		plr:SetAttribute("Carrying", 0)
@@ -4202,7 +4377,7 @@ TransformEvent.OnServerEvent:Connect(function(player)
 	local s = state[player]
 	local char = player.Character
 	local hum = char and char:FindFirstChildOfClass("Humanoid")
-	if not s or not hum or hum.Health <= 0 or not s.ready then
+	if not s or not hum or hum.Health <= 0 or not s.ready or char:GetAttribute("Downed") then
 		return
 	end
 	if os.clock() - s.lastTransform < CONFIG.TRANSFORM_COOLDOWN then
@@ -4219,7 +4394,7 @@ SuitEvent.OnServerEvent:Connect(function(player)
 	local s = state[player]
 	local char = player.Character
 	local hum = char and char:FindFirstChildOfClass("Humanoid")
-	if not s or not hum or hum.Health <= 0 or not s.ready then
+	if not s or not hum or hum.Health <= 0 or not s.ready or char:GetAttribute("Downed") then
 		return
 	end
 	if os.clock() - s.lastTransform < CONFIG.TRANSFORM_COOLDOWN then
@@ -4250,6 +4425,15 @@ local function hitEnemy(model, player, weapon, amount, position)
 		amount = amount * weapon.bossMult
 		damaged = damageBoss(amount) or "deflect"
 		killed = damaged == true and (ReplicatedStorage:GetAttribute("BossHealth") or 0) <= 0
+	elseif model:GetAttribute("Target") then
+		-- objectives from the chapter modules (Echo Pylons...): their damageTarget returns damaged, killed
+		for _, damage in ipairs(chapterHooks.damage) do
+			local d, k = damage(model, amount, player)
+			if d then
+				damaged, killed = true, k == true
+				break
+			end
+		end
 	end
 	if damaged == true then
 		HitEvent:FireClient(player, position, math.floor(amount + 0.5), killed)
@@ -4353,6 +4537,13 @@ local function meleeStrike(player, hrp, aim, weapon)
 	if boss and boss.alive and inFront(boss.weak.Position, weapon.range + 6) then
 		hitEnemy(boss.model, player, weapon, weapon.damage, boss.weak.Position)
 	end
+	for _, list in ipairs(chapterHooks.targets) do -- chapter-module objectives: { { model, center } }
+		for _, t in ipairs(list()) do
+			if inFront(t.center, weapon.range + 4) then
+				hitEnemy(t.model, player, weapon, weapon.damage, t.center)
+			end
+		end
+	end
 	-- a crackling arc in front of you
 	local center = hrp.Position + facing * (weapon.range * 0.5)
 	sparkBurst(center, weapon.color, 30, 25, 0.5, 0.35)
@@ -4371,7 +4562,7 @@ BlastEvent.OnServerEvent:Connect(function(player, aimPoint)
 	local char = player.Character
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
 	local hum = char and char:FindFirstChildOfClass("Humanoid")
-	if not s or not hrp or not hum or hum.Health <= 0 or s.mode ~= "Robot" then
+	if not s or not hrp or not hum or hum.Health <= 0 or s.mode ~= "Robot" or char:GetAttribute("Downed") then
 		return
 	end
 	local weapon = equippedWeapon(player)
@@ -4389,6 +4580,9 @@ BlastEvent.OnServerEvent:Connect(function(player, aimPoint)
 		meleeStrike(player, hrp, aim, weapon)
 		return
 	end
+	if not useAmmo(player, weapon) then
+		return -- reloading, or out of ammo
+	end
 	local forward = CFrame.lookAt(Vector3.zero, aim.Unit)
 	for _ = 1, weapon.pellets do
 		local dir = forward.LookVector
@@ -4404,7 +4598,7 @@ ShiftEvent.OnServerEvent:Connect(function(player)
 	local s = state[player]
 	local char = player.Character
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
-	if not s or not hrp or transitioning then
+	if not s or not hrp or transitioning or char:GetAttribute("Downed") then
 		return
 	end
 	if os.clock() - s.lastShift < CONFIG.SHIFT_COOLDOWN then
@@ -4451,6 +4645,8 @@ ShiftEvent.OnServerEvent:Connect(function(player)
 			or (stage == "Carrier" and "YOU ENTERED THE UNDERGRID. DEFEND THE CARRIER!")
 			or (stage == "Race" and "WRONG WAY! THE RADIO TOWER IS IN HOLLOW CREEK.")
 			or (stage == "Complete" and "THE UNDERGRID IS QUIET... FOR NOW.")
+			or (stage == "Keycards" and "YOU ENTERED THE UNDERGRID. TWO KEYCARDS ARE IN THE GRAND HOTEL ON THIS SIDE.")
+			or ((stage == "Pylons" or stage == "Tape") and "SITE 2 IS UNDER THE GRAND HOTEL IN HOLLOW CREEK - NOT HERE!")
 			or "YOU ENTERED THE UNDERGRID. FIND THE SHARDS."
 		NotifyEvent:FireClient(player, text .. "  SHIELD " .. shieldTime .. "s - THE RIFT AREA IS SAFE", Color3.fromRGB(255, 60, 70))
 	else
@@ -4505,6 +4701,10 @@ GetSaveFunction.OnServerInvoke = function(player)
 		graphics = profile and profile.graphics,
 		shake = profile and profile.shake,
 		autoAim = profile and profile.autoAim,
+		tutorialDone = profile and profile.tutorialDone,
+		volume = profile and profile.volume,
+		hudSize = profile and profile.hudSize,
+		damageNumbers = profile and profile.damageNumbers,
 		look = profile and profile.look,
 		lookCatalog = lookCatalog(profile),
 		fresh = worldIsFresh(),
@@ -4602,7 +4802,8 @@ local function shopState(profile)
 			id = id, name = w.name, price = w.price, desc = w.desc, color = w.color,
 			stats = w.melee and (w.damage .. " DMG  /  " .. string.format("%.2g", 1 / w.cooldown) .. " HITS PER S  /  CLOSE RANGE, THROUGH WALLS")
 				or (w.pellets > 1 and (w.pellets .. " x " .. w.damage) or tostring(w.damage)) .. " DMG  /  "
-				.. string.format("%.2g", 1 / w.cooldown) .. " SHOTS PER S  /  RANGE " .. w.range,
+				.. string.format("%.2g", 1 / w.cooldown) .. " SHOTS PER S  /  RANGE " .. w.range
+				.. (w.mag and ("  /  MAG " .. w.mag .. ", SPARE " .. w.reserve) or ""),
 		})
 	end
 	for _, id in ipairs(UPGRADE_ORDER) do
@@ -4612,7 +4813,8 @@ local function shopState(profile)
 	for id in pairs(profile.owned) do
 		owned[id] = true
 	end
-	return { scrap = profile.scrap, weapon = profile.weapon, owned = owned, weapons = weapons, upgrades = upgrades }
+	return { scrap = profile.scrap, weapon = profile.weapon, owned = owned, weapons = weapons, upgrades = upgrades,
+		ammoPrice = CONFIG.AMMO_REFILL_PRICE }
 end
 
 -- R / SWAP: switch to the next weapon you own (everyone owns the Pulse Cannon and the Shock Baton)
@@ -4665,6 +4867,15 @@ ShopFunction.OnServerInvoke = function(player, action, id)
 		profile.scrap = profile.scrap - price
 		profile.upgrades[id] = level + 1
 		message = u.name .. " LEVEL " .. (level + 1)
+	elseif action == "ammo" then
+		-- full refill of every gun you own
+		if profile.scrap < CONFIG.AMMO_REFILL_PRICE then
+			return { ok = false, message = "NOT ENOUGH SCRAP", state = shopState(profile) }
+		elseif not refillAmmo(player, 1) then
+			return { ok = false, message = "YOUR AMMO IS ALREADY FULL", state = shopState(profile) }
+		end
+		profile.scrap = profile.scrap - CONFIG.AMMO_REFILL_PRICE
+		message = "AMMO REFILLED"
 	elseif action == "equip" and WEAPONS[id] then
 		if not profile.owned[id] then
 			return { ok = false, message = "BUY IT FIRST", state = shopState(profile) }
@@ -4715,8 +4926,412 @@ SettingsEvent.OnServerEvent:Connect(function(player, kind, value)
 		profile.autoAim = value
 	elseif kind == "shake" and typeof(value) == "boolean" then
 		profile.shake = value
+	elseif kind == "volume" and typeof(value) == "number" and value % 1 == 0 and value >= 0 and value <= 10 then
+		profile.volume = value
+	elseif kind == "hud" and (value == 1 or value == 2 or value == 3) then
+		profile.hudSize = value
+	elseif kind == "numbers" and typeof(value) == "boolean" then
+		profile.damageNumbers = value
 	end
 end)
+
+---------------------------------------------------------------------------
+-- Firepower (task 012): every gun has a magazine, a reload and limited spare
+-- ammo. Free ammo is only for the basic Pulse Cannon: drops from creatures and a
+-- HALF refill every 20 min (10 min below level 5). The bought guns (Arc, Scatter,
+-- Lance) only refill for Scrap. The Shock Baton never runs out.
+---------------------------------------------------------------------------
+do
+local AMMO_ORANGE = Color3.fromRGB(255, 170, 40)
+
+local function maxMag(profile, w)
+	return math.floor(w.mag * (1 + 0.25 * (profile.upgrades.mag or 0)) + 0.5)
+end
+
+-- the ammo of one weapon (nil for the baton); a weapon nobody has fired yet is full
+local function ammoOf(profile, id)
+	local w = WEAPONS[id]
+	if not w or w.melee or not w.mag then
+		return nil
+	end
+	local a = profile.ammo[id]
+	if not a then
+		a = { mag = maxMag(profile, w), spare = w.reserve }
+		profile.ammo[id] = a
+	end
+	return a, w
+end
+
+local function refillInterval(profile)
+	return levelInfo(profile.xp) < 5 and CONFIG.AMMO_REFILL_TIME_NEW or CONFIG.AMMO_REFILL_TIME
+end
+
+-- HUD attributes: Ammo / AmmoMax / AmmoSpare (nil = unlimited), AmmoRefillAt (os.time)
+pushAmmo = function(player)
+	local profile = profiles[player]
+	if not profile then
+		return
+	end
+	local a, w = ammoOf(profile, profile.weapon)
+	player:SetAttribute("Ammo", a and a.mag or nil)
+	player:SetAttribute("AmmoMax", a and maxMag(profile, w) or nil)
+	player:SetAttribute("AmmoSpare", a and a.spare or nil)
+	player:SetAttribute("AmmoRefillAt", profile.refillAt)
+end
+
+local function startReload(player, profile, a, w)
+	local s = state[player]
+	if not s or (s.reloadUntil and os.clock() < s.reloadUntil) or a.spare <= 0 or a.mag >= maxMag(profile, w) then
+		return
+	end
+	local time = w.reload * (1 - 0.15 * (profile.upgrades.reload or 0))
+	s.reloadUntil = os.clock() + time
+	s.reloadToken = (s.reloadToken or 0) + 1
+	local token = s.reloadToken
+	player:SetAttribute("Reloading", true)
+	task.delay(time, function()
+		if state[player] ~= s or s.reloadToken ~= token then
+			return
+		end
+		player:SetAttribute("Reloading", false)
+		local take = math.min(maxMag(profile, w) - a.mag, a.spare)
+		a.mag = a.mag + take
+		a.spare = a.spare - take
+		pushAmmo(player)
+	end)
+end
+
+-- one shot: true = fire it. Reloads by itself when the magazine is empty.
+useAmmo = function(player, weapon)
+	if weapon.melee then
+		return true
+	end
+	local profile = profiles[player]
+	local s = state[player]
+	if not profile or not s then
+		return false
+	end
+	if s.reloadUntil and os.clock() < s.reloadUntil then
+		return false
+	end
+	local a, w = ammoOf(profile, profile.weapon)
+	if not a then
+		return true
+	end
+	if a.mag <= 0 then
+		if a.spare > 0 then
+			startReload(player, profile, a, w)
+		elseif not s.lastEmpty or os.clock() - s.lastEmpty > 4 then
+			s.lastEmpty = os.clock()
+			NotifyEvent:FireClient(player, "OUT OF AMMO! SWAP (R) TO ANOTHER WEAPON OR THE SHOCK BATON, OR BUY AMMO AT THE GARAGE"
+				.. (profile.weapon == "pulse" and " (THE PULSE CANNON ALSO GETS A FREE HALF REFILL)" or ""), Color3.fromRGB(255, 60, 70))
+		end
+		return false
+	end
+	a.mag = a.mag - 1
+	if a.mag <= 0 then
+		startReload(player, profile, a, w)
+	end
+	pushAmmo(player)
+	return true
+end
+
+-- top every gun you own (or only `onlyId`) up to `fraction` of full (1 = full). Returns true if anything changed.
+refillAmmo = function(player, fraction, onlyId)
+	local profile = profiles[player]
+	if not profile then
+		return false
+	end
+	local changed = false
+	for id in pairs(profile.owned) do
+		local a, w = nil, nil
+		if not onlyId or id == onlyId then
+			a, w = ammoOf(profile, id)
+		end
+		if a then
+			local mm = maxMag(profile, w)
+			local want = math.floor((mm + w.reserve) * fraction)
+			local add = want - (a.mag + a.spare)
+			if add > 0 then
+				changed = true
+				local toMag = math.min(mm - a.mag, add)
+				a.mag = a.mag + toMag
+				a.spare = math.min(a.spare + add - toMag, w.reserve)
+			end
+		end
+	end
+	pushAmmo(player)
+	return changed
+end
+
+-- the free refill timer (runs while you play; it keeps counting in the save)
+task.spawn(function()
+	while true do
+		task.wait(5)
+		local now = os.time()
+		for plr, profile in pairs(profiles) do
+			if plr.Parent and profile.loaded and profile.chosen then
+				if not profile.refillAt then
+					profile.refillAt = now + refillInterval(profile)
+					pushAmmo(plr)
+				elseif now >= profile.refillAt then
+					profile.refillAt = now + refillInterval(profile)
+					-- only the basic Pulse Cannon: ammo for the bought guns is bought with Scrap
+					if refillAmmo(plr, CONFIG.AMMO_REFILL_FRACTION, "pulse") then
+						NotifyEvent:FireClient(plr, "FREE AMMO: PULSE CANNON REFILLED TO HALF. NEED MORE? BUY A FULL REFILL AT THE GARAGE",
+							AMMO_ORANGE)
+					end
+					pushAmmo(plr)
+				end
+			end
+		end
+	end
+end)
+
+-- ammo drops: a glowing orange box that gives a spare magazine to whoever touches it
+local dropFolder = Instance.new("Folder")
+dropFolder.Name = "AmmoDrops"
+dropFolder.Parent = workspace
+
+dropAmmo = function(position)
+	if rng:NextNumber() > CONFIG.AMMO_DROP_CHANCE then
+		return
+	end
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Include
+	params.FilterDescendantsInstances = { workspace.Terrain, town, undergrid }
+	local hit = workspace:Raycast(position, Vector3.new(0, -40, 0), params)
+	local at = (hit and hit.Position or position) + Vector3.new(0, 1.2, 0)
+	local box = newPart({ Name = "AmmoDrop", Size = Vector3.new(1.6, 1.2, 1.6), CFrame = CFrame.new(at) * CFrame.Angles(0, math.rad(rng:NextNumber(0, 90)), 0),
+		Color = AMMO_ORANGE, Material = Enum.Material.Neon, CanCollide = false, CanQuery = false, Parent = dropFolder })
+	local light = Instance.new("PointLight")
+	light.Color = AMMO_ORANGE
+	light.Range = 8
+	light.Brightness = 1.5
+	light.Parent = box
+	local gui = Instance.new("BillboardGui")
+	gui.Size = UDim2.fromOffset(80, 24)
+	gui.StudsOffset = Vector3.new(0, 2, 0)
+	gui.MaxDistance = 80
+	gui.Parent = box
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.fromScale(1, 1)
+	label.BackgroundTransparency = 1
+	label.Font = Enum.Font.Arcade
+	label.Text = "AMMO"
+	label.TextColor3 = AMMO_ORANGE
+	label.TextScaled = true
+	label.TextStrokeTransparency = 0.3
+	label.Parent = gui
+	local taken = false
+	box.Touched:Connect(function(part)
+		local char = part:FindFirstAncestorOfClass("Model")
+		local plr = char and Players:GetPlayerFromCharacter(char)
+		local profile = plr and profiles[plr]
+		if taken or not profile then
+			return
+		end
+		-- free ammo is only for the basic Pulse Cannon (the bought guns' ammo is bought with Scrap)
+		local a, w = ammoOf(profile, "pulse")
+		if not a or a.spare >= w.reserve then
+			return -- full: leave it for someone else
+		end
+		taken = true
+		a.spare = math.min(a.spare + maxMag(profile, w), w.reserve)
+		pushAmmo(plr)
+		NotifyEvent:FireClient(plr, "+1 MAGAZINE (" .. w.name .. ")", AMMO_ORANGE)
+		box:Destroy()
+	end)
+	Debris:AddItem(box, 30)
+end
+end -- firepower section
+
+---------------------------------------------------------------------------
+-- Friends and co-op (task 011): DOWN + revive, ping markers, friend bonus
+---------------------------------------------------------------------------
+do
+local DOWN_RED = Color3.fromRGB(255, 60, 70)
+local REVIVE_GREEN = Color3.fromRGB(60, 255, 140)
+
+-- players in the game (not in a menu) who are up and could come to help
+local function helpersFor(except)
+	local n = 0
+	for _, p in ipairs(Players:GetPlayers()) do
+		local c = p.Character
+		local h = c and c:FindFirstChildOfClass("Humanoid")
+		if p ~= except and h and h.Health > 0 and not c:GetAttribute("Downed") and profiles[p] and profiles[p].chosen then
+			n = n + 1
+		end
+	end
+	return n
+end
+
+local function clearDown(char)
+	char:SetAttribute("Downed", nil)
+	char:SetAttribute("DownedUntil", nil)
+	local glow = char:FindFirstChild("DownedGlow")
+	if glow then
+		glow:Destroy()
+	end
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	local prompt = hrp and hrp:FindFirstChild("RevivePrompt")
+	if prompt then
+		prompt:Destroy()
+	end
+end
+
+local function revive(plr, char, hum, helper)
+	if not char:GetAttribute("Downed") or hum.Health <= 0 then
+		return
+	end
+	clearDown(char)
+	local s = state[plr]
+	if s then
+		setMode(plr, s.mode) -- puts walk speed and jump back
+	end
+	hum.Health = math.max(hum.MaxHealth * 0.5, 1)
+	notifyAll(helper.DisplayName .. " REVIVED " .. plr.DisplayName .. "!", REVIVE_GREEN)
+	awardScrap(helper, CONFIG.SCRAP_REVIVE, "REVIVE")
+	track(helper, "revive", 1)
+end
+
+local function goDown(plr, char, hum)
+	local s = state[plr]
+	if s and s.mode == "Vehicle" then
+		setMode(plr, "Robot") -- the car folds back into the robot
+	end
+	local token = (char:GetAttribute("DownToken") or 0) + 1
+	char:SetAttribute("DownToken", token)
+	char:SetAttribute("Downed", true)
+	char:SetAttribute("DownedUntil", workspace:GetServerTimeNow() + CONFIG.DOWN_TIME)
+	hum.Health = 1
+	hum.WalkSpeed = 0
+	hum.JumpPower = 0
+
+	local glow = Instance.new("Highlight")
+	glow.Name = "DownedGlow"
+	glow.FillColor = DOWN_RED
+	glow.FillTransparency = 0.55
+	glow.OutlineColor = DOWN_RED
+	glow.Parent = char
+
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	if hrp then
+		local prompt = Instance.new("ProximityPrompt")
+		prompt.Name = "RevivePrompt" -- Signal85Client hides it on the downed player's own screen
+		prompt.ActionText = "Revive"
+		prompt.ObjectText = plr.DisplayName
+		prompt.HoldDuration = CONFIG.REVIVE_HOLD
+		prompt.MaxActivationDistance = 12
+		prompt.RequiresLineOfSight = false
+		prompt.Parent = hrp
+		prompt.Triggered:Connect(function(helper)
+			local hc = helper.Character
+			local hh = hc and hc:FindFirstChildOfClass("Humanoid")
+			if helper ~= plr and hh and hh.Health > 0 and not hc:GetAttribute("Downed") then
+				revive(plr, char, hum, helper)
+			end
+		end)
+	end
+	notifyAll(plr.DisplayName .. " IS DOWN! GO TO THEM AND HOLD E (OR TAP) TO REVIVE", DOWN_RED)
+
+	task.delay(CONFIG.DOWN_TIME, function()
+		if char.Parent and char:GetAttribute("Downed") and char:GetAttribute("DownToken") == token and hum.Health > 0 then
+			clearDown(char)
+			hum.Health = 0 -- nobody came: respawn as usual
+		end
+	end)
+end
+
+-- all damage to players goes through here. Alone, you die as before; with someone else
+-- playing, a hit that would kill you puts you DOWN for a while instead.
+hurtPlayer = function(plr, hum, amount)
+	local char = hum.Parent
+	if not char or char:GetAttribute("Downed") or char:FindFirstChildOfClass("ForceField") then
+		return
+	end
+	if hum.Health - amount > 0 or not plr or helpersFor(plr) == 0 then
+		hum:TakeDamage(amount)
+		return
+	end
+	goDown(plr, char, hum)
+end
+
+-- ping: T / PING marks a spot for everyone; snaps to an enemy or an item close to it
+PingEvent.OnServerEvent:Connect(function(player, pos)
+	if typeof(pos) ~= "Vector3" or pos.X ~= pos.X or pos.Y ~= pos.Y or pos.Z ~= pos.Z then
+		return -- not a position (or NaN)
+	end
+	local s = state[player]
+	local char = player.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if not s or not hrp or (hrp.Position - pos).Magnitude > 450 then
+		return
+	end
+	if s.lastPing and os.clock() - s.lastPing < CONFIG.PING_COOLDOWN then
+		return
+	end
+	s.lastPing = os.clock()
+	local kind = "spot"
+	local function near(folder, k)
+		if kind ~= "spot" or not folder then
+			return
+		end
+		for _, d in ipairs(folder:GetChildren()) do
+			local at = (d:IsA("Model") and d:GetPivot().Position) or (d:IsA("BasePart") and d.Position) or nil
+			if at and (at - pos).Magnitude < 10 then
+				kind, pos = k, at
+				return
+			end
+		end
+	end
+	near(creatureFolder, "enemy")
+	near(workspace:FindFirstChild("HiveNodes"), "enemy")
+	near(workspace:FindFirstChild("Boss"), "enemy")
+	near(shardFolder, "item")
+	near(fileFolder, "item")
+	PingEvent:FireAllClients(pos, kind, player.DisplayName)
+end)
+
+-- friend bonus: +10% gameplay Scrap while a Roblox friend is in the same server
+local friendCache = {}
+local function areFriends(a, b)
+	local key = math.min(a.UserId, b.UserId) .. ":" .. math.max(a.UserId, b.UserId)
+	if friendCache[key] == nil then
+		local ok, yes = pcall(function()
+			return a:IsFriendsWith(b.UserId)
+		end)
+		if not ok then
+			return false -- try again next time
+		end
+		friendCache[key] = yes == true
+	end
+	return friendCache[key]
+end
+
+local function refreshFriends()
+	local list = Players:GetPlayers()
+	for _, a in ipairs(list) do
+		local any = false
+		for _, b in ipairs(list) do
+			if a ~= b and b.Parent and areFriends(a, b) then
+				any = true
+				break
+			end
+		end
+		if any and not a:GetAttribute("FriendBonus") then
+			NotifyEvent:FireClient(a, "FRIEND BONUS: +" .. math.floor(CONFIG.FRIEND_BONUS * 100) .. "% SCRAP WHILE YOU PLAY TOGETHER", REVIVE_GREEN)
+		end
+		a:SetAttribute("FriendBonus", any or nil)
+	end
+end
+Players.PlayerAdded:Connect(function()
+	task.delay(3, refreshFriends)
+end)
+Players.PlayerRemoving:Connect(function()
+	task.delay(1, refreshFriends)
+end)
+end -- task 011 section
 
 ---------------------------------------------------------------------------
 -- Players

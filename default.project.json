@@ -3,13 +3,15 @@
   "tree": {
     "$className": "DataModel",
     "ServerScriptService": {
-      "Signal85Server": { "$path": "src/server/Signal85Server.server.lua" }
+      "Signal85Server": { "$path": "src/server/Signal85Server.server.lua" },
+      "Chapters": { "$path": "src/server/chapters" }
     },
     "StarterPlayer": {
       "StarterPlayerScripts": {
         "Signal85Client": { "$path": "src/client/Signal85Client.client.lua" },
         "IntroBroadcast": { "$path": "src/client/IntroBroadcast.client.lua" },
-        "StartMenu": { "$path": "src/client/StartMenu.client.lua" }
+        "StartMenu": { "$path": "src/client/StartMenu.client.lua" },
+        "Tutorial": { "$path": "src/client/Tutorial.client.lua" }
       }
     }
   }

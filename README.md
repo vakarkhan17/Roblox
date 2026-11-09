@@ -8,6 +8,7 @@
 | `src/server/Signal85Server.server.lua` | Script `ServerScriptService.Signal85Server` |
 | `src/client/Signal85Client.client.lua` | LocalScript `StarterPlayer.StarterPlayerScripts.Signal85Client` (HUD, controls, target marker) |
 | `src/client/IntroBroadcast.client.lua` | LocalScript `StarterPlayer.StarterPlayerScripts.IntroBroadcast` |
+| `src/client/Tutorial.client.lua` | LocalScript `StarterPlayer.StarterPlayerScripts.Tutorial` ("First Night" tutorial) |
 | `src/client/StartMenu.client.lua` | LocalScript `StarterPlayer.StarterPlayerScripts.StartMenu` (title / pause menu, mission briefing) |
 
 `default.project.json` maps the files; `rokit.toml` pins the Rojo version (7.7.1).
@@ -35,7 +36,11 @@ To build a place file without Studio: `rojo build -o Signal85.rbxlx`.
 | R | SWAP | Swap to the next weapon you own |
 | E | RIFT / tap prompt | Shift through the rift, open hotel doors, use the elevator |
 | M / K | MENU / SAVE | Pause menu / save the game |
-| REWARDS button | REWARDS | Daily reward, daily quests, achievements, top pilots, codes |
+| REWARDS button | REWARDS | Daily reward, daily quests, achievements, top pilots, codes, invite friends |
+| T | PING | Mark a spot (or an enemy / item) for everyone |
+| Y | TARGET | Switch the compass to another target (another shard, node, the rift...) |
+| C | CAMERA | Swing the camera behind you |
+| Hold E | Hold the prompt | Revive a downed teammate |
 | H | ? | How to play |
 | - / + | - / + | Darker / brighter |
 
