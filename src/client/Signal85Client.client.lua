@@ -127,7 +127,29 @@ local PRESETS = {
 		atmosphere = { Density = 0.45, Haze = 2.5, Glare = 0, Color = Color3.fromRGB(200, 70, 80), Decay = Color3.fromRGB(80, 20, 30) },
 		grade = { TintColor = Color3.fromRGB(255, 200, 200), Saturation = -0.1, Contrast = 0.2, Brightness = -0.02 },
 	},
+	-- Chapter 6: the Deep Grid, a dark void lit by cyan static
+	DeepGrid = {
+		lighting = { ClockTime = 0, Brightness = 0.4, Ambient = Color3.fromRGB(40, 60, 80), OutdoorAmbient = Color3.fromRGB(50, 70, 95) },
+		atmosphere = { Density = 0.5, Haze = 2, Glare = 0, Color = Color3.fromRGB(30, 50, 70), Decay = Color3.fromRGB(5, 10, 20) },
+		grade = { TintColor = Color3.fromRGB(190, 225, 255), Saturation = -0.4, Contrast = 0.3, Brightness = -0.02 },
+	},
+	-- the end of Season 1: a clear morning over Hollow Creek
+	Morning = {
+		lighting = { ClockTime = 7.5, Brightness = 2.6, Ambient = Color3.fromRGB(120, 115, 110), OutdoorAmbient = Color3.fromRGB(150, 145, 140) },
+		atmosphere = { Density = 0.25, Haze = 1, Glare = 0.6, Color = Color3.fromRGB(255, 220, 190), Decay = Color3.fromRGB(150, 150, 170) },
+		grade = { TintColor = Color3.fromRGB(255, 248, 235), Saturation = 0.15, Contrast = 0.05, Brightness = 0.02 },
+	},
 }
+
+-- Chapter 6: the Deep Grid is a far-away floating area (the server sets its centre and size)
+local function inDeepGrid(position)
+	local center, half = workspace:GetAttribute("DeepGridCenter"), workspace:GetAttribute("DeepGridHalf")
+	if not center or not half or not position then
+		return false
+	end
+	local rel = position - center
+	return math.abs(rel.X + 100) < half.X + 10 and math.abs(rel.Z) < half.Z + 10 and rel.Y > -400 and rel.Y < half.Y + 50
+end
 
 -- player light setting (- / + keys or HUD buttons), applied on top of the presets
 local LIGHT_MIN, LIGHT_MAX = -3, 6
@@ -682,6 +704,11 @@ local function refreshSeal()
 	TweenService:Create(barFill, TweenInfo.new(0.4), { Size = UDim2.fromScale(math.clamp(progress / goal, 0, 1), 1) }):Play()
 end
 
+local function hrpPosition()
+	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	return hrp and hrp.Position
+end
+
 local function refreshObjective()
 	local progress = ReplicatedStorage:GetAttribute("Progress") or 0
 	local goal = ReplicatedStorage:GetAttribute("Goal") or 1
@@ -706,8 +733,24 @@ local function refreshObjective()
 		objectiveText.Text = "Every radio in Hollow Creek switched on by itself. The Listener knows. TO BE CONTINUED IN CHAPTER 5."
 	elseif s == "Complete" and chapter == 5 then
 		objectiveText.Text = "The storm is over... but RICKY was pulled into a huge rift. TO BE CONTINUED IN CHAPTER 6."
+	elseif s == "Complete" and chapter == 6 then
+		objectiveText.Text = "SEASON 1 COMPLETE! The Listener is silent and the rift is closed. Thank you for playing - explore freely."
 	elseif s == "Complete" then
 		objectiveText.Text = "THE SIGNAL IS QUIET... FOR NOW. Explore freely."
+	elseif s == "Locks" then
+		local deep = inDeepGrid(hrpPosition())
+		objectiveText.Text = deep and "Break the 3 white STATIC LOCKS around Ricky's cage in the middle of the Deep Grid!"
+			or "Go down to the DEEP GRID: Site 2 (steel door in the hotel's ground floor men's washroom) -> the ROUND DOOR in the deep room -> Descend."
+		objectiveGoal.Text = "STATIC LOCKS: " .. progress .. "/" .. goal .. " BROKEN"
+	elseif s == "Listener" then
+		objectiveText.Text = inDeepGrid(hrpPosition()) and "THE LISTENER: shoot off its 4 ANTENNAS (red tips). Move when a RED CIRCLE appears under you!"
+			or "The Listener is in the DEEP GRID: Site 2 -> the round door in the deep room -> Descend."
+		objectiveGoal.Text = "ANTENNAS: " .. progress .. "/" .. goal .. " DOWN"
+	elseif s == "Collapse" then
+		objectiveText.Text = "THE PLATFORM IS FALLING! Drive the floating road WEST to the radio tower platform before it falls. CAR MODE!"
+	elseif s == "Broadcast" then
+		objectiveText.Text = "STAND IN THE 3 BLUE RINGS by the radio towers while the counter-signal plays. More rings held = faster!"
+		objectiveGoal.Text = "COUNTER-SIGNAL: " .. math.floor(progress / math.max(goal, 1) * 100) .. "%"
 	elseif s == "Rifts" then
 		objectiveText.Text = inUndergrid and "The storm is in HOLLOW CREEK. Go back through the rift!"
 			or "Close the red MINI-RIFTS in town: stand inside each red circle until it closes. More pilots = faster. Things come out of them!"
@@ -783,12 +826,19 @@ local function refreshObjective()
 		.. "ground floor men's washroom, destroy the 4 Echo Pylons in Site 2 and play the tape in the deep room.\n"
 		.. "CHAPTER 5: STATIC STORM\n"
 		.. "11. Close 5 mini-rifts in town (stand in the red circles), defend the WHCK van, then drive the signal "
-		.. "tapes from the radio tower to the Grand Hotel entrance."
+		.. "tapes from the radio tower to the Grand Hotel entrance.\n"
+		.. "CHAPTER 6: THE LISTENER\n"
+		.. "12. Go down through Site 2's round door to the Deep Grid, break Ricky's 3 static locks, shoot off the "
+		.. "Listener's 4 antennas, race the falling road west, then hold the 3 blue rings until the counter-signal ends."
 end
 
 local function worldPreset()
+	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	if hrp and inDeepGrid(hrp.Position) then
+		return "DeepGrid"
+	end
 	if player:GetAttribute("Dimension") ~= "Undergrid" then
-		return workspace:GetAttribute("Storm") and "Storm" or "Town"
+		return (workspace:GetAttribute("Storm") and "Storm") or (workspace:GetAttribute("Morning") and "Morning") or "Town"
 	end
 	local s = stage()
 	return (s == "Boss" or s == "Carrier") and "UndergridBoss" or "Undergrid"
@@ -796,7 +846,7 @@ end
 
 local function refreshBoss()
 	local s = stage()
-	local fighting = (s == "Boss" or s == "Carrier" or s == "Van") and (ReplicatedStorage:GetAttribute("BossMaxHealth") or 0) > 0
+	local fighting = (s == "Boss" or s == "Carrier" or s == "Van" or s == "Listener") and (ReplicatedStorage:GetAttribute("BossMaxHealth") or 0) > 0
 	bossBar.Visible = fighting
 	if fighting then
 		bossName.Text = ReplicatedStorage:GetAttribute("BossName") or ""
@@ -897,6 +947,16 @@ end)
 workspace:GetAttributeChangedSignal("Storm"):Connect(function()
 	applyPreset(worldPreset(), 3)
 end)
+-- Chapter 6 ending: morning light, and a white flash when the Listener falls silent
+workspace:GetAttributeChangedSignal("Morning"):Connect(function()
+	applyPreset(worldPreset(), 4)
+end)
+workspace:GetAttributeChangedSignal("Whiteout"):Connect(function()
+	if workspace:GetAttribute("Whiteout") then
+		screenFlash(Color3.new(1, 1, 1))
+		shake(0.6, 1.5)
+	end
+end)
 for _, name in ipairs({ "BossHealth", "BossMaxHealth", "BossOpen", "BossName" }) do
 	ReplicatedStorage:GetAttributeChangedSignal(name):Connect(refreshBoss)
 end
@@ -905,14 +965,14 @@ end
 RunService.Heartbeat:Connect(function()
 	local deadline = ReplicatedStorage:GetAttribute("Deadline") or 0
 	local s = stage()
-	if deadline <= 0 or (s ~= "Carrier" and s ~= "Race" and s ~= "Van" and s ~= "TapeRace") then
+	if deadline <= 0 or (s ~= "Carrier" and s ~= "Race" and s ~= "Van" and s ~= "TapeRace" and s ~= "Collapse") then
 		timerLabel.Visible = false
 		return
 	end
 	local left = math.max(math.ceil(deadline - workspace:GetServerTimeNow()), 0)
 	local clock = string.format("%d:%02d", left // 60, left % 60)
 	timerLabel.Text = ((s == "Race" and "CODE EXPIRES IN ") or (s == "Van" and "BROADCAST ENDS IN ")
-		or (s == "TapeRace" and "TAPES FAIL IN ") or "SHUTDOWN IN ") .. clock
+		or (s == "TapeRace" and "TAPES FAIL IN ") or (s == "Collapse" and "THE ROAD FALLS IN ") or "SHUTDOWN IN ") .. clock
 	timerLabel.TextColor3 = left <= 10 and RED or Color3.fromRGB(255, 220, 120)
 	timerLabel.Visible = true
 end)
@@ -1100,7 +1160,7 @@ end)
 -- touch aim: where the + in the middle of the screen points, locking on to
 -- the target closest to it if one is within AIM_ASSIST_DEG and in range.
 -- Targets: Hollowers, Hive Nodes, and the Mind Warden's weak point.
-local AIM_FOLDERS = { "Creatures", "HiveNodes", "Boss", "Site2Targets" }
+local AIM_FOLDERS = { "Creatures", "HiveNodes", "Boss", "Site2Targets", "DeepGridTargets" }
 
 local function crosshairAim()
 	local cam = workspace.CurrentCamera
@@ -1678,6 +1738,35 @@ local function currentTarget(from)
 		end
 		return riftOn(side), "RIFT - MORE KEYCARDS ON THE OTHER SIDE"
 	end
+	-- Chapter 6: the way down (town -> Site 2 -> round door), then the Deep Grid objectives
+	if s == "Locks" or s == "Listener" or s == "Collapse" or s == "Broadcast" then
+		if not inDeepGrid(from) then
+			if inUndergrid then
+				return riftOn("Undergrid"), "RIFT - THE WAY DOWN IS IN TOWN"
+			end
+			if inSite2(from) then
+				local site = workspace:FindFirstChild("Site2")
+				return site and site:FindFirstChild("Site2RoundDoor"), "THE ROUND DOOR - DESCEND"
+			end
+			local entrance = workspace:FindFirstChild("Site2Entrance")
+			return entrance and entrance:FindFirstChild("Site2Door"), "SITE 2 DOOR (MEN'S WASHROOM)"
+		end
+		local grid = workspace:FindFirstChild("DeepGrid")
+		if s == "Locks" then
+			return nearestIn("DeepGridTargets", from), "STATIC LOCK"
+		elseif s == "Listener" then
+			return nearestIn("DeepGridTargets", from), "ANTENNA"
+		elseif s == "Collapse" then
+			return grid and grid:FindFirstChild("DeepTowerGoal"), "RADIO TOWER PLATFORM"
+		end
+		local best, bestDist = nil, math.huge
+		for _, p in ipairs(grid and grid:GetChildren() or {}) do
+			if p.Name == "BroadcastRing" and (p.Position - from).Magnitude < bestDist then
+				best, bestDist = p, (p.Position - from).Magnitude
+			end
+		end
+		return best, "BLUE RING"
+	end
 	-- Chapter 5: everything happens in town
 	if (s == "Rifts" or s == "Van" or s == "TapeRace") and inUndergrid then
 		return riftOn("Undergrid"), "RIFT - THE STORM IS IN TOWN"
@@ -1824,8 +1913,13 @@ local function targetOptions(from)
 			add(p, "MINI-RIFT")
 		end
 	end
-	if s == "Rifts" or s == "Van" or s == "TapeRace" then
-		return options -- the town rift doesn't help in Chapter 5
+	if (s == "Locks" or s == "Listener") and inDeepGrid(from) then
+		for _, p in ipairs(sortedParts("DeepGridTargets", from)) do
+			add(p, s == "Locks" and "STATIC LOCK" or "ANTENNA")
+		end
+	end
+	if s == "Rifts" or s == "Van" or s == "TapeRace" or s == "Locks" or s == "Listener" or s == "Collapse" or s == "Broadcast" then
+		return options -- the town rift doesn't help in Chapters 5 and 6
 	end
 	if s == "Files" then
 		for _, p in ipairs(sortedParts("LowbandFiles", from, function(file)
@@ -2057,6 +2151,7 @@ local function mirrorScare()
 end
 
 local lastFloor = nil
+local lastDeep = false
 local indoorCamera = false
 local INDOOR_ZOOM = 16
 local outdoorZoom = player.CameraMaxZoomDistance
@@ -2079,6 +2174,18 @@ RunService.Heartbeat:Connect(function()
 			worldLabel.Text = "SITE 2 - LOWBAND, 1958"
 		elseif floor then
 			worldLabel.Text = (floor == 6 and "GRAND HOTEL - ROOF") or ("GRAND HOTEL - FLOOR " .. floor)
+		else
+			refreshWorld()
+		end
+	end
+	-- Chapter 6: the Deep Grid has its own lighting and label
+	local deep = inDeepGrid(hrp.Position)
+	if deep ~= lastDeep then
+		lastDeep = deep
+		applyPreset(worldPreset(), 1.5)
+		refreshObjective()
+		if deep then
+			worldLabel.Text = "THE DEEP GRID"
 		else
 			refreshWorld()
 		end

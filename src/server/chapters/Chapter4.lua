@@ -286,6 +286,7 @@ return function(api)
 			Color = Color3.fromRGB(70, 70, 74), CanCollide = false, Parent = entrance })
 	end
 	local rubble = {}
+	local site2Open = false -- true when a later chapter (6) opens the way down
 	entrance.Parent = workspace
 
 	local function setTiles(broken)
@@ -448,7 +449,8 @@ return function(api)
 		return workspace:Raycast(from, dir, siteParams) == nil
 	end
 
-	local function spawnEcho(at)
+	-- targetsFn: who it hunts (default: pilots in Site 2). Chapter 6 uses it in the Deep Grid.
+	local function spawnEcho(at, targetsFn)
 		local m = Instance.new("Model")
 		m.Name = "Echo"
 		local SHADE = Color3.fromRGB(26, 20, 36)
@@ -483,7 +485,7 @@ return function(api)
 
 		api.creatures[m] = {
 			lastHit = 0, phase = rng:NextNumber(0, 10), speed = 11, damage = 12, hitCooldown = 1.8, reward = 4, height = 3.4,
-			targets = playersInSite2,
+			targets = targetsFn or playersInSite2,
 			-- keep about 24 studs away while it can see you; come closer when a wall is in the way
 			stopAt = function(model, t)
 				return (model.PrimaryPart and canSee(model.PrimaryPart.Position, t.hrp.Position)) and 24 or 4
@@ -646,10 +648,11 @@ return function(api)
 
 	doorPrompt.Triggered:Connect(function(plr)
 		local stage = api.ReplicatedStorage:GetAttribute("Stage")
-		if api.ReplicatedStorage:GetAttribute("Chapter") ~= 4 then
+		local chapter = api.ReplicatedStorage:GetAttribute("Chapter")
+		if chapter ~= 4 and not site2Open then
 			return
 		end
-		if stage == "Keycards" then
+		if chapter == 4 and stage == "Keycards" then
 			api.remotes.Notify:FireClient(plr, "LOCKED - " .. tostring(api.ReplicatedStorage:GetAttribute("Progress") or 0) .. " / "
 				.. KEYCARDS .. " KEYCARDS. TWO ARE IN THIS HOTEL, TWO IN ITS UNDERGRID COPY", RED)
 			return
@@ -724,8 +727,20 @@ return function(api)
 		end
 	end
 
+	-- for later chapters (Chapter 6 goes down through Site 2): door open, vault open, no pylons
+	api.shared.openSite2 = function(on)
+		site2Open = on
+		setTiles(on)
+		setSlots(on and KEYCARDS or 0)
+		doorPrompt.Enabled = on
+		doorPrompt.ActionText = "Enter Site 2"
+		openVault(on)
+	end
+	api.shared.spawnEcho = spawnEcho
+
 	-- reset for any chapter: the tiles go back, the door locks, everything spawned is removed
 	def.clear = function()
+		site2Open = false
 		cardFolder:ClearAllChildren()
 		for m in pairs(pylons) do
 			m:Destroy()

@@ -2626,6 +2626,10 @@ local function snapshot()
 		chapter, stage, progress = 4, "Keycards", 0 -- already on the way to Chapter 4
 	elseif chapter == 4 and stage == "Complete" then
 		chapter, stage, progress = 5, "Rifts", 0 -- already on the way to Chapter 5
+	elseif chapter == 5 and stage == "Complete" then
+		chapter, stage, progress = 6, "Locks", 0 -- already on the way to Chapter 6
+	elseif chapter == 6 and (stage == "Listener" or stage == "Collapse" or stage == "Broadcast") then
+		stage, progress = "Listener", 0 -- the final boss restarts from its first phase
 	elseif stage == "Van" or stage == "TapeRace" then
 		progress = 0 -- Chapter 5: the van defence and the tape race restart from their beginning
 	end
@@ -4315,6 +4319,7 @@ do
 		hotelSpot = hotelSpot, HOTEL_CENTER = HOTEL_CENTER, HOTEL_FLOORS = HOTEL_FLOORS, HOTEL_FLOOR_H = HOTEL_FLOOR_H,
 		HOTEL_ROOMS = HOTEL_ROOMS, HOTEL_HALF = HOTEL_HALF,
 		colors = { GREEN = GREEN, WARN = WARN, GLOW = GLOW },
+		shared = {}, -- for chapter modules to share things (Chapter 4: openSite2, spawnEcho)
 	}
 	local folder = script.Parent:FindFirstChild("Chapters")
 	for _, mod in ipairs(folder and folder:GetChildren() or {}) do
@@ -4657,6 +4662,8 @@ ShiftEvent.OnServerEvent:Connect(function(player)
 			or (stage == "Keycards" and "YOU ENTERED THE UNDERGRID. TWO KEYCARDS ARE IN THE GRAND HOTEL ON THIS SIDE.")
 			or ((stage == "Pylons" or stage == "Tape") and "SITE 2 IS UNDER THE GRAND HOTEL IN HOLLOW CREEK - NOT HERE!")
 			or ((stage == "Rifts" or stage == "Van" or stage == "TapeRace") and "THE STORM IS IN HOLLOW CREEK - GO BACK THROUGH THE RIFT!")
+			or ((stage == "Locks" or stage == "Listener" or stage == "Collapse" or stage == "Broadcast")
+				and "THE WAY TO THE DEEP GRID IS IN SITE 2, UNDER THE GRAND HOTEL IN HOLLOW CREEK!")
 			or "YOU ENTERED THE UNDERGRID. FIND THE SHARDS."
 		NotifyEvent:FireClient(player, text .. "  SHIELD " .. shieldTime .. "s - THE RIFT AREA IS SAFE", Color3.fromRGB(255, 60, 70))
 	else

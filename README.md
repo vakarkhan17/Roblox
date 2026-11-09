@@ -8,6 +8,8 @@
 | `src/server/Signal85Server.server.lua` | Script `ServerScriptService.Signal85Server` |
 | `src/client/Signal85Client.client.lua` | LocalScript `StarterPlayer.StarterPlayerScripts.Signal85Client` (HUD, controls, target marker) |
 | `src/client/IntroBroadcast.client.lua` | LocalScript `StarterPlayer.StarterPlayerScripts.IntroBroadcast` |
+| `src/client/Sound.client.lua` | LocalScript `StarterPlayer.StarterPlayerScripts.Sound` (sound effects + music; ids in its `SOUNDS` / `MUSIC` tables) |
+| `src/server/chapters/ChapterN.lua` | ModuleScripts `ServerScriptService.Chapters.Chapter4..6` |
 | `src/client/Tutorial.client.lua` | LocalScript `StarterPlayer.StarterPlayerScripts.Tutorial` ("First Night" tutorial) |
 | `src/client/StartMenu.client.lua` | LocalScript `StarterPlayer.StarterPlayerScripts.StartMenu` (title / pause menu, mission briefing) |
 
@@ -51,6 +53,10 @@ A yellow marker always points to your next target.
 - **Chapter 1, Seal the Rift:** enter the rift east of Main Street, collect Signal Shards in the Undergrid, deliver 6 to the green console under the radio tower.
 - **Chapter 2, The Source:** destroy 3 Hive Nodes in the Undergrid, then defeat the Mind Warden by the Undergrid radio tower (shoot it while its head is open, jump over shockwaves).
 - **Chapter 3, LOWBAND:** recover the lab files, power the relays, escort the Carrier and win the race.
+- **Chapter 4, Site 2:** find 4 keycards in the hotel, go down into Site 2 under it, destroy the Echo Pylons, play the tape.
+- **Chapter 5, Static Storm:** close mini-rifts in town, defend the WHCK van, race the signal tapes to the hotel.
+- **Chapter 6, The Listener (Season 1 finale):** descend to the Deep Grid, free Ricky, defeat the Listener in 3 phases.
+- Chapters 4–6 are ModuleScripts in `src/server/chapters/` (ServerScriptService.Chapters), loaded by the main server script.
 - **The Grand Hotel** is used in every chapter: 5 floors, guest rooms (press E at a door), washrooms, grand stairs and elevators. It changes a little each chapter.
 - **Scrap** from creatures and missions buys weapons and upgrades at the garage or from the menu.
 - **Pilot level:** gameplay Scrap also gives XP. Levels unlock suit paints (5, 10), the ponytail hair (15) and the VETERAN title (20).

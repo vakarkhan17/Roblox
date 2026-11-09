@@ -11,7 +11,8 @@
         "Signal85Client": { "$path": "src/client/Signal85Client.client.lua" },
         "IntroBroadcast": { "$path": "src/client/IntroBroadcast.client.lua" },
         "StartMenu": { "$path": "src/client/StartMenu.client.lua" },
-        "Tutorial": { "$path": "src/client/Tutorial.client.lua" }
+        "Tutorial": { "$path": "src/client/Tutorial.client.lua" },
+        "Sound": { "$path": "src/client/Sound.client.lua" }
       }
     }
   }

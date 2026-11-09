@@ -438,6 +438,42 @@ local PICTURES = {
 		end
 		return m
 	end,
+	-- Chapter 6
+	lock = function()
+		local m = Instance.new("Model")
+		local static = Color3.fromRGB(220, 235, 255)
+		for k = 1, 10 do
+			local a = k / 10 * math.pi * 2
+			part(m, { Size = Vector3.new(0.4, 10, 0.4), Color = static, Material = Enum.Material.Neon, CFrame = CFrame.new(math.cos(a) * 4, 5, math.sin(a) * 4) })
+		end
+		part(m, { Size = Vector3.new(3, 3, 3), Color = static, Material = Enum.Material.Neon, CFrame = CFrame.new(9, 3, 0) * CFrame.Angles(0.6, 0.6, 0) })
+		part(m, { Size = Vector3.new(1.6, 4, 1), Color = Color3.fromRGB(60, 90, 170), Material = Enum.Material.SmoothPlastic, CFrame = CFrame.new(0, 2, 0) })
+		return m
+	end,
+	listener = function()
+		local m = Instance.new("Model")
+		part(m, { Size = Vector3.new(12, 26, 10), Color = Color3.fromRGB(14, 12, 20), Material = Enum.Material.Slate, CFrame = CFrame.new(0, 0, 4) })
+		part(m, { Shape = Enum.PartType.Cylinder, Size = Vector3.new(1, 18, 18), Color = Color3.fromRGB(120, 230, 255), Material = Enum.Material.Neon,
+			CFrame = CFrame.new(0, 6, -2) * CFrame.Angles(0, math.rad(90), 0) })
+		part(m, { Shape = Enum.PartType.Cylinder, Size = Vector3.new(1.2, 11, 11), Color = Color3.fromRGB(5, 5, 10), Material = Enum.Material.Glass,
+			CFrame = CFrame.new(0, 6, -2.3) * CFrame.Angles(0, math.rad(90), 0) })
+		for _, x in ipairs({ -7, 7 }) do
+			part(m, { Size = Vector3.new(0.8, 12, 0.8), Color = Color3.fromRGB(70, 70, 80), Material = Enum.Material.Metal, CFrame = CFrame.new(x, 18, 4) })
+			part(m, { Shape = Enum.PartType.Ball, Size = Vector3.one * 2, Color = RED, Material = Enum.Material.Neon, CFrame = CFrame.new(x, 24, 4) })
+		end
+		return m
+	end,
+	rings = function()
+		local m = Instance.new("Model")
+		for k = 0, 2 do
+			local a = k / 3 * math.pi * 2
+			part(m, { Shape = Enum.PartType.Cylinder, Size = Vector3.new(0.3, 7, 7), Color = Color3.fromRGB(70, 140, 255), Material = Enum.Material.Neon,
+				Transparency = 0.3, CFrame = CFrame.new(math.cos(a) * 9, 0, math.sin(a) * 9) * CFrame.Angles(0, 0, math.rad(90)) })
+			part(m, { Size = Vector3.new(0.6, 14, 0.6), Color = Color3.fromRGB(170, 40, 40), Material = Enum.Material.Metal,
+				CFrame = CFrame.new(math.cos(a) * 13, 7, math.sin(a) * 13) })
+		end
+		return m
+	end,
 	marker = function()
 		local m = Instance.new("Model")
 		part(m, { Size = Vector3.new(3, 3, 0.4), Color = YELLOW, Material = Enum.Material.Neon, CFrame = CFrame.Angles(0, 0, math.rad(45)) })
@@ -539,12 +575,22 @@ local BRIEFINGS = {
 			{ "hound", "WATCH OUT", RED, "This time HOLLOWERS and STATIC HOUNDS are IN TOWN. There is no safe side of the rift tonight." },
 		},
 	},
+	[6] = {
+		goal = "The finale. Go down to the Deep Grid, free Ricky and silence the Listener.",
+		cards = {
+			{ "lock", "1. FREE RICKY", Color3.fromRGB(220, 235, 255), "Site 2 -> the ROUND DOOR in the deep room -> Descend. Break the 3 white STATIC LOCKS around Ricky's cage." },
+			{ "listener", "2. THE LISTENER", RED, "Shoot off its 4 ANTENNAS (red tips). When a RED CIRCLE appears under you, MOVE - a static beam is coming." },
+			{ "carrier", "3. RACE", Color3.fromRGB(255, 214, 140), "The platform falls! Drive the floating road WEST to the radio tower platform before it drops. Car mode!" },
+			{ "rings", "4. BROADCAST", Color3.fromRGB(70, 140, 255), "Stand in the 3 BLUE RINGS while the counter-signal plays. The more rings you hold together, the faster it ends." },
+		},
+	},
 }
 
 local function stageName(stage)
 	return ({ Shards = "Collecting shards", Nodes = "Hive Nodes", Boss = "Mind Warden", Files = "LOWBAND files", Relays = "Power relays", Carrier = "Defend the Carrier", Complete = "Complete",
 		Keycards = "Keycards", Pylons = "Echo Pylons", Tape = "The tape",
-		Rifts = "Mini-rifts", Van = "Defend the van", TapeRace = "Tape race" })[stage] or tostring(stage)
+		Rifts = "Mini-rifts", Van = "Defend the van", TapeRace = "Tape race",
+		Locks = "Free Ricky", Listener = "The Listener", Collapse = "The falling road", Broadcast = "The counter-signal" })[stage] or tostring(stage)
 end
 
 local function timeAgo(seconds)
@@ -704,12 +750,13 @@ end
 local shopTab = "weapons"
 local shopFromGarage = false -- opened at the Garage: BACK closes the menu instead of going to the pause menu
 local showShop
+local shopList = nil -- the scrolling list the rows go in (the shop is taller than a phone screen)
 
 local function shopRow(order, color, title, desc, stats, actionLabel, actionColor, onAction)
 	local row = make("Frame", {
-		BackgroundColor3 = Color3.fromRGB(22, 18, 28), BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 0),
+		BackgroundColor3 = Color3.fromRGB(22, 18, 28), BorderSizePixel = 0, Size = UDim2.new(1, -14, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = order,
-	}, panel)
+	}, shopList or panel)
 	make("UIStroke", { Color = color, Thickness = 2 }, row)
 	pad(row, 8)
 	make("Frame", { BackgroundColor3 = color, BorderSizePixel = 0, Size = UDim2.new(0, 10, 1, 0) }, row)
@@ -747,6 +794,7 @@ showShop = function(state)
 	if not state then
 		return
 	end
+	local keep = shopList and shopList.Parent and shopList.CanvasPosition or Vector2.zero
 	clearScreen()
 	text(panel, { Text = "SCRAP GARAGE", TextSize = 34, TextColor3 = Color3.fromRGB(255, 170, 40), LayoutOrder = 1 })
 	text(panel, { Text = "SCRAP: " .. state.scrap, TextSize = 24, TextColor3 = YELLOW, LayoutOrder = 2 })
@@ -766,7 +814,21 @@ showShop = function(state)
 		b.Size = UDim2.fromOffset(200, 48)
 	end
 
-	local order = 5
+	-- the rows scroll (keep the scroll position while buying)
+	shopList = make("ScrollingFrame", {
+		BackgroundTransparency = 1, BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, SMALL_SCREEN and 300 or 420), LayoutOrder = 5,
+		CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollBarThickness = 8, ScrollBarImageColor3 = AMBER,
+		ScrollingDirection = Enum.ScrollingDirection.Y,
+	}, panel)
+	list(shopList, 8).VerticalAlignment = Enum.VerticalAlignment.Top
+	pad(shopList, 4)
+	task.defer(function()
+		if shopList and shopList.Parent then
+			shopList.CanvasPosition = keep
+		end
+	end)
+
+	local order = 6
 	if shopTab == "weapons" then
 		-- task 012: refill every gun you own (the free refill only gives half)
 		if state.ammoPrice then
@@ -992,7 +1054,7 @@ local function showSettings()
 			SettingsEvent:FireServer("numbers", on)
 		end)
 	local volume = player:GetAttribute("SoundVolume") or 8
-	option("SOUND VOLUME: " .. volume .. " / 10", "Music and sound effects arrive in a later update.",
+	option("SOUND VOLUME: " .. volume .. " / 10", "Sound effects and music (0 = silent).",
 		{ { "0", 0 }, { "-", math.max(volume - 1, 0) }, { "+", math.min(volume + 1, 10) }, { "10", 10 } }, -1, function(v)
 			player:SetAttribute("SoundVolume", v)
 			SettingsEvent:FireServer("volume", v)
