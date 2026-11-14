@@ -123,7 +123,9 @@ local CONFIG = {
 	AMMO_REFILL_TIME = 1200,     -- seconds between free refills (half of full ammo)...
 	AMMO_REFILL_TIME_NEW = 600,  -- ...or this for pilots below level 5
 	AMMO_REFILL_FRACTION = 0.5,  -- the free refill tops every gun up to this part of full
-	AMMO_REFILL_PRICE = 40,      -- Scrap for a full refill of every gun you own (Garage / shop)
+	AMMO_REFILL_PRICE = 40,      -- Scrap for a full refill of every gun you own, at the Scrap Garage
+	AMMO_REFILL_PRICE_FIELD = 60, -- ...and anywhere else (MENU > SHOP or the HUD's REFILL button)
+	GARAGE_RANGE = 45,           -- studs from the Garage counter that count as "at the Garage"
 	AMMO_DROP_CHANCE = 0.15,     -- a defeated creature drops a spare magazine this often
 
 	-- Robux (task 017). Create these on the Roblox website (Creator Dashboard > your game >
@@ -158,7 +160,7 @@ local WEAPONS = {
 		desc = "Slow, huge damage. Pierces 4 enemies. x1.5 vs the Mind Warden." },
 }
 -- the second free weapon: melee (range = reach in studs). Hits everything in front of you, through walls.
-WEAPONS.baton = { name = "SHOCK BATON", price = 0, damage = 55, cooldown = 0.45, range = 11, pellets = 1, spread = 0, melee = true,
+WEAPONS.baton = { name = "SHOCK BATON", price = 0, damage = 25, cooldown = 0.45, range = 11, pellets = 1, spread = 0, melee = true,
 	splash = 0, splashFrac = 0, pierce = 1, bossMult = 1, width = 0, color = Color3.fromRGB(255, 240, 120),
 	desc = "Free. Close range: zaps every enemy in front of you, even through walls." }
 local WEAPON_ORDER = { "pulse", "baton", "arc", "scatter", "lance" }
@@ -2528,6 +2530,7 @@ local function loadProfile(player)
 		-- task 017: Game Passes owned (checked with Roblox on every join, not saved) and handled receipts
 		passes = {}, receipts = {},
 	}
+	profile.player = player
 	profiles[player] = profile
 	applyLoadout(player)
 	if saveStore then
@@ -4852,6 +4855,19 @@ SaveGameFunction.OnServerInvoke = function(player)
 end
 
 -- Shop: the client sends an action and an item id; prices and ownership live on the server
+-- ammo refill price: cheaper at the Scrap Garage, more anywhere else (task 018)
+local GARAGE_COUNTER = Vector3.new(-19, 2, 205)
+workspace:SetAttribute("GarageCounter", GARAGE_COUNTER)
+workspace:SetAttribute("AmmoPriceGarage", CONFIG.AMMO_REFILL_PRICE)
+workspace:SetAttribute("AmmoPriceField", CONFIG.AMMO_REFILL_PRICE_FIELD)
+workspace:SetAttribute("GarageRange", CONFIG.GARAGE_RANGE)
+local function ammoPriceFor(profile)
+	local player = profile.player
+	local hrp = player and player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	local atGarage = hrp and player:GetAttribute("Dimension") == "Town" and (hrp.Position - GARAGE_COUNTER).Magnitude <= CONFIG.GARAGE_RANGE
+	return atGarage and CONFIG.AMMO_REFILL_PRICE or CONFIG.AMMO_REFILL_PRICE_FIELD
+end
+
 local function shopState(profile)
 	local weapons, upgrades, owned = {}, {}, {}
 	for _, id in ipairs(WEAPON_ORDER) do
@@ -4872,7 +4888,7 @@ local function shopState(profile)
 		owned[id] = true
 	end
 	return { scrap = profile.scrap, weapon = profile.weapon, owned = owned, weapons = weapons, upgrades = upgrades,
-		ammoPrice = CONFIG.AMMO_REFILL_PRICE, robux = robuxShop and robuxShop(profile) or nil }
+		ammoPrice = ammoPriceFor(profile), robux = robuxShop and robuxShop(profile) or nil }
 end
 
 -- R / SWAP: switch to the next weapon you own (everyone owns the Pulse Cannon and the Shock Baton)
@@ -4927,13 +4943,15 @@ ShopFunction.OnServerInvoke = function(player, action, id)
 		message = u.name .. " LEVEL " .. (level + 1)
 	elseif action == "ammo" then
 		-- full refill of every gun you own
-		if profile.scrap < CONFIG.AMMO_REFILL_PRICE then
-			return { ok = false, message = "NOT ENOUGH SCRAP", state = shopState(profile) }
+		-- 40 Scrap at the Garage, 60 anywhere else (also the HUD's quick REFILL button)
+		local price = ammoPriceFor(profile)
+		if profile.scrap < price then
+			return { ok = false, message = "NOT ENOUGH SCRAP - A REFILL COSTS " .. price .. " HERE", state = shopState(profile) }
 		elseif not refillAmmo(player, 1) then
 			return { ok = false, message = "YOUR AMMO IS ALREADY FULL", state = shopState(profile) }
 		end
-		profile.scrap = profile.scrap - CONFIG.AMMO_REFILL_PRICE
-		message = "AMMO REFILLED"
+		profile.scrap = profile.scrap - price
+		message = "AMMO REFILLED  -" .. price .. " SCRAP"
 	elseif action == "equip" and WEAPONS[id] then
 		if not profile.owned[id] then
 			return { ok = false, message = "BUY IT FIRST", state = shopState(profile) }

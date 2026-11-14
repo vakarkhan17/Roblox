@@ -40,6 +40,7 @@ To build a place file without Studio: `rojo build -o Signal85.rbxlx`.
 | M / K | MENU / SAVE | Pause menu / save the game |
 | REWARDS button | REWARDS | Daily reward, daily quests, achievements, top pilots, codes, invite friends |
 | T | PING | Mark a spot (or an enemy / item) for everyone |
+| B | REFILL (shows when ammo is low) | Buy a full ammo refill right here: 40 Scrap at the Garage, 60 anywhere else |
 | Y | TARGET | Switch the compass to another target (another shard, node, the rift...) |
 | C | CAMERA | Swing the camera behind you |
 | Hold E | Hold the prompt | Revive a downed teammate |

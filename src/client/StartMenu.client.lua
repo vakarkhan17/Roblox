@@ -834,7 +834,7 @@ showShop = function(state)
 		if state.ammoPrice then
 			local spare = player:GetAttribute("AmmoSpare")
 			shopRow(order, Color3.fromRGB(255, 170, 40), "AMMO REFILL",
-				"Fills every gun you own. Free ammo (drops, and half a refill every 20 min) is only for the Pulse Cannon.",
+				"Fills every gun you own. Costs 40 Scrap at the Garage and 60 anywhere else. Free ammo is only for the Pulse Cannon.",
 				spare and ("YOUR " .. tostring(player:GetAttribute("WeaponName") or "GUN") .. ": " .. tostring(player:GetAttribute("Ammo") or 0)
 					.. " + SPARE " .. spare) or nil,
 				"BUY " .. state.ammoPrice, state.scrap >= state.ammoPrice and YELLOW or DIM, function()

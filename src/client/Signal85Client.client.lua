@@ -1466,10 +1466,59 @@ local function clock(seconds)
 	seconds = math.max(math.floor(seconds), 0)
 	return string.format("%d:%02d", seconds // 60, seconds % 60)
 end
+
+-- quick refill (task 018): buy a full refill right here with Scrap. 40 at the Garage, 60 anywhere
+-- else; the server decides the price and checks the Scrap. Key B, or tap the button.
+local ORANGE = Color3.fromRGB(255, 170, 40)
+local refillButton = button(gui, "", {
+	AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -182), Size = UDim2.fromOffset(250, 34), TextSize = 16,
+	TextColor3 = ORANGE, BackgroundTransparency = 0.2, Visible = false,
+})
+refillButton.Name = "RefillButton"
+refillButton:FindFirstChildOfClass("UIStroke").Color = ORANGE
+local function refillPrice()
+	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	local counter = workspace:GetAttribute("GarageCounter")
+	local atGarage = hrp and counter and player:GetAttribute("Dimension") == "Town"
+		and (hrp.Position - counter).Magnitude <= (workspace:GetAttribute("GarageRange") or 45)
+	return atGarage and (workspace:GetAttribute("AmmoPriceGarage") or 40) or (workspace:GetAttribute("AmmoPriceField") or 60), atGarage
+end
+local buying = false
+local function buyRefill()
+	if buying or not canAct() or currentMode ~= "Robot" then
+		return
+	end
+	buying = true
+	task.spawn(function()
+		local ok, result = pcall(function()
+			return remotes:WaitForChild("Shop"):InvokeServer("ammo")
+		end)
+		if ok and type(result) == "table" and result.message and result.message ~= "" then
+			showBanner(result.message, result.ok and ORANGE or RED)
+		end
+		buying = false
+	end)
+end
+refillButton.Activated:Connect(buyRefill)
+ContextActionService:BindAction("S85_Refill", function(_, inputState)
+	if inputState == Enum.UserInputState.Begin then
+		buyRefill()
+	end
+	return Enum.ContextActionResult.Pass
+end, false, Enum.KeyCode.B)
+
 RunService.Heartbeat:Connect(function()
 	local show = gui.Enabled and currentMode == "Robot"
 	ammoLabel.Visible = show
 	refillLabel.Visible = show
+	-- the REFILL button shows when the gun in your hands is getting low
+	local total = (player:GetAttribute("Ammo") or 0) + (player:GetAttribute("AmmoSpare") or 0)
+	local low = player:GetAttribute("Ammo") ~= nil and total <= (player:GetAttribute("AmmoMax") or 0) * 2
+	refillButton.Visible = show and low
+	if show and low then
+		local price, atGarage = refillPrice()
+		refillButton.Text = "REFILL: " .. price .. " SCRAP" .. (IS_PHONE and "" or " [B]") .. (atGarage and " (GARAGE)" or "")
+	end
 	if not show then
 		return
 	end
@@ -1477,7 +1526,7 @@ RunService.Heartbeat:Connect(function()
 	local ammo = player:GetAttribute("Ammo")
 	local refillAt = player:GetAttribute("AmmoRefillAt")
 	-- the free refill is only for the Pulse Cannon; the bought guns refill at the Garage
-	local refillText = player:GetAttribute("Weapon") ~= "pulse" and "REFILL THIS GUN WITH SCRAP AT THE GARAGE / SHOP"
+	local refillText = player:GetAttribute("Weapon") ~= "pulse" and "THIS GUN REFILLS WITH SCRAP: 40 AT THE GARAGE, 60 ANYWHERE ELSE"
 		or (refillAt and ("FREE HALF REFILL IN " .. clock(refillAt - os.time())) or "")
 	if ammo == nil then
 		ammoLabel.Text = name .. "  -  UNLIMITED"
@@ -1491,7 +1540,7 @@ RunService.Heartbeat:Connect(function()
 		ammoLabel.Text = name .. "  RELOADING..."
 		ammoLabel.TextColor3 = CYAN
 	elseif ammo <= 0 and spare <= 0 then
-		ammoLabel.Text = "OUT OF AMMO!  " .. (IS_TOUCH and "SWAP" or "R") .. " = SHOCK BATON, OR BUY AT THE GARAGE"
+		ammoLabel.Text = "OUT OF AMMO!  " .. (IS_TOUCH and "SWAP" or "R") .. " = SHOCK BATON, OR " .. (IS_PHONE and "TAP REFILL" or "PRESS B TO REFILL")
 		ammoLabel.TextColor3 = RED
 	else
 		ammoLabel.Text = name .. "  " .. ammo .. " / " .. max .. "   SPARE " .. spare
